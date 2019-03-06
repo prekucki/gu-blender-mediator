@@ -1,0 +1,13 @@
+[package]
+name = "gu-blender-mediator"
+version = "0.1.0"
+authors = ["Przemysław K. Rekucki <przemyslaw.rekucki@golem.network>"]
+edition = "2018"
+
+[dependencies]
+gu-client = { git="https://github.com/golemfactory/golem-unlimited.git", branch="feature/blender" }
+golem_gw_api={git="https://github.com/prekucki/golem-gw-client.git"}
+structopt= { version="0.2.14"}
+
+[build-dependencies]
+structopt= { version="0.2.14"}
