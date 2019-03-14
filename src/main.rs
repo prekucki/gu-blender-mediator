@@ -37,6 +37,7 @@ impl State {
 }
 
 struct TaskWorker {
+    gw_url : String,
     api: Rc<dyn golem_gw_api::apis::DefaultApi>,
     hub_session: gu_client::r#async::HubSessionRef,
     deployment: Option<gu_client::r#async::PeerSession>,
@@ -51,12 +52,14 @@ struct TaskWorker {
 
 impl TaskWorker {
     fn new(
+        gw_url : String,
         api: &Rc<dyn golem_gw_api::apis::DefaultApi>,
         hub_session: gu_client::r#async::HubSessionRef,
         node_id: &str,
         task: &golem_gw_api::models::Task,
     ) -> Self {
         TaskWorker {
+            gw_url,
             api: api.clone(),
             hub_session,
             node_id: node_id.to_owned(),
@@ -208,8 +211,8 @@ impl Handler<DoResource> for TaskWorker {
         use gu_client::model::envman::{Command, ResourceFormat};
 
         let r = &msg.0;
-        let zip_uri = format!("http://127.0.0.1:55011/{}/{}", r.path(), r.task_id());
-        let task_uri = format!("http://127.0.0.1:55011/{}", r.task_id());
+        let zip_uri = format!("{}/{}/{}", self.gw_url, r.path(), r.task_id());
+        let task_uri = format!("{}/{}", self.gw_url, r.task_id());
 
         let deployment = match self.deployment.as_ref() {
             Some(d) => d,
@@ -289,6 +292,7 @@ impl Actor for TaskWorker {
 }
 
 struct Gateway {
+    gw_url : String,
     base_url: String,
     api: Option<std::rc::Rc<dyn golem_gw_api::apis::DefaultApi>>,
     hub_session: Option<gu_client::r#async::HubSessionRef>,
@@ -297,8 +301,9 @@ struct Gateway {
 }
 
 impl Gateway {
-    fn new(base_url: String) -> Gateway {
+    fn new(gw_url : String, base_url: String) -> Gateway {
         Gateway {
+            gw_url,
             base_url,
             api: None,
             last_event_id: -1,
@@ -373,6 +378,7 @@ impl Gateway {
         if let Some(task) = ev.task() {
             eprintln!("processing event={:?}", ev);
             let worker = TaskWorker::new(
+                self.gw_url.clone(),
                 self.api.as_ref().unwrap(),
                 self.hub_session.as_ref().unwrap().clone(),
                 self.node_id(),
@@ -461,7 +467,7 @@ impl Actor for Gateway {
 fn main() {
     let args = args::Args::from_args();
 
-    let gw = Gateway::new(args.gw_addr).start();
+    let gw = Gateway::new(args.dav_addr, args.gw_addr).start();
     //let client = ::hyper::client::Client::
     //golem_gw_api::apis::configuration::Configuration::new()
 
