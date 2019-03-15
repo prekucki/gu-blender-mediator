@@ -20,6 +20,7 @@ rand="0.6.5"
 lazy_static="1.3"
 bytes = "0.4.10"
 regex = "1.1.2"
+env_logger="0.6.1"
 
 [build-dependencies]
 structopt= { version="0.2.14"}

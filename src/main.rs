@@ -476,6 +476,7 @@ impl Actor for Gateway {
 }
 
 fn main() {
+    env_logger::init();
     let args = args::Args::from_args();
 
     let gw = Gateway::new(args.dav_addr, args.gw_addr).start();
