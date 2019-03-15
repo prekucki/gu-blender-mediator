@@ -97,12 +97,7 @@ impl Handler<GiveMeNode> for WorkMan {
                     if let Some(&it) = c.choose(&mut rng) {
                         act.reservations
                             .insert(it.clone(), Reservation::new(msg.task_id, msg.deadline));
-                        //fut::ok(it)
-                        fut::ok(
-                            "0xf6140a03926b0801cd891d2d128ebd8dffbda252"
-                                .parse()
-                                .unwrap(),
-                        )
+                        fut::ok(it)
                     } else {
                         fut::err(NoFreeNode)
                     }

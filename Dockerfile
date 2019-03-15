@@ -8,5 +8,5 @@ ENV DAV_URL="http://gw-dav-storage:55011"
 ENV GW_URL="http://gw:55001/"
 ENV GU_HUB_ADDR=hub:61622
 ENV RUST_LOG=info
-ENTRYPOINT [ "/usr/local/bin/gu-blender-mediator" ]
+ENTRYPOINT gu-blender-mediator --dav $DAV_URL --gw GW_URL
 
