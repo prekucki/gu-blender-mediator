@@ -1,7 +1,124 @@
 use futures::{future, prelude::*};
 use gu_client::model::envman::{CreateSession, Image};
 use gu_client::r#async::{Peer, PeerSession};
+use failure::Fail;
+use regex::Captures;
 use serde_derive::*;
+use std::io;
+use std::ops::*;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct OldBlenderTaskSpec {
+    frames: Vec<u32>,
+    outfilebasename: String,
+    output_format: String,
+    scene_file: Option<String>,
+    script_src: String,
+}
+
+#[derive(Default, Debug)]
+struct ScriptData {
+    resolution_x: Option<u32>,
+    resolution_y: Option<u32>,
+    border_max_x: Option<f64>,
+    border_min_x: Option<f64>,
+    border_min_y: Option<f64>,
+    border_max_y: Option<f64>,
+    use_compositing: Option<bool>,
+}
+
+#[inline]
+fn unwrap_val<T>(val : Option<T>, name : &'static str) -> Result<T, ErrorMissingField> {
+    match val {
+        Some(v) => Ok(v),
+        None => Err(ErrorMissingField(name))
+    }
+}
+
+macro_rules! data_getter {
+    ($name:ident : $t:ty) => {
+        #[inline]
+        fn $name(&self) -> Result<$t, ErrorMissingField> {
+            unwrap_val(self.$name, stringify!($name))
+        }
+    }
+}
+
+
+impl ScriptData {
+    fn update_from_script(&mut self, key: &str, val: &str) -> failure::Fallible<()> {
+        match key {
+            "resolution_x" => self.resolution_x = Some(val.parse()?),
+            "resolution_y" => self.resolution_y = Some(val.parse()?),
+            "border_max_x" => self.border_max_x = Some(val.parse()?),
+            "border_min_x" => self.border_min_x = Some(val.parse()?),
+            "border_max_y" => self.border_max_y = Some(val.parse()?),
+            "border_min_y" => self.border_min_y = Some(val.parse()?),
+            "use_compositing" => {
+                self.use_compositing = Some(match val {
+                    "True" | "bool(True)" => true,
+                    "False" | "bool(False)" => false,
+                    _ => Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("invalid use_compositing='{}'", val),
+                    ))?,
+                })
+            }
+            _ => (),
+        };
+        Ok(())
+    }
+
+    data_getter! { resolution_x : u32 }
+    data_getter! { resolution_y : u32 }
+
+    data_getter! { border_max_x : f64 }
+    data_getter! { border_min_x : f64 }
+    data_getter! { border_max_y : f64 }
+    data_getter! { border_min_y : f64 }
+}
+
+lazy_static::lazy_static! {
+        static ref RE: regex::Regex = regex::Regex::new(r"bpy\.context\.scene\.render\.([a-zA-Z0-9_]+)\s*=\s*([^\s]+)").unwrap();
+}
+
+#[derive(Debug, Fail)]
+#[fail(display = "missing field: {}", _0)]
+struct ErrorMissingField(&'static str);
+
+impl OldBlenderTaskSpec {
+    pub fn resolution(&self) -> (u32, u32) {
+        unimplemented!()
+    }
+
+    fn parse_script<'a>(&'a self) -> failure::Fallible<ScriptData> {
+        use std::ops::Index;
+        let mut data = ScriptData::default();
+
+        for c in RE.captures_iter(&self.script_src) {
+            data.update_from_script(c.index(1), c.index(2))?;
+        }
+
+        Ok(data)
+    }
+
+    fn into_spec(self) -> failure::Fallible<BlenderTaskSpec> {
+        let data = self.parse_script()?;
+
+        Ok(BlenderTaskSpec {
+            samples: 0,
+            resolution: (data.resolution_x()?, data.resolution_y()?),
+            frames: self.frames,
+            scene_file: self.scene_file,
+            output_format: self.output_format,
+            crops: vec![Crop {
+                borders_x: (data.border_min_x()?, data.border_max_x()?),
+                borders_y: (data.border_min_y()?, data.border_max_y()?),
+                outfilebasename: self.outfilebasename
+            }]
+        })
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BlenderTaskSpec {
@@ -91,4 +208,50 @@ pub fn blender_deployment_spec(
             }),
         )
     }
+}
+
+pub fn decode(extra_data: serde_json::Value) -> Result<BlenderTaskSpec, failure::Error> {
+    match serde_json::from_value(extra_data.clone()) {
+        Ok(v) => return Ok(v),
+        _ => (),
+    };
+    let old_spec: OldBlenderTaskSpec = serde_json::from_value(extra_data)?;
+
+    old_spec.into_spec()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse() {
+        let b = OldBlenderTaskSpec {
+            frames: vec![],
+            outfilebasename: "".to_string(),
+            output_format: "".to_string(),
+            scene_file: None,
+            script_src: r#"
+
+bpy.context.scene.render.tile_x = tile_size
+bpy.context.scene.render.tile_y = tile_size
+bpy.context.scene.render.resolution_x = 320
+bpy.context.scene.render.resolution_y = 240
+bpy.context.scene.render.resolution_percentage = 100
+bpy.context.scene.render.use_border = True
+bpy.context.scene.render.use_crop_to_border = True
+bpy.context.scene.render.border_max_x = 1.0
+bpy.context.scene.render.border_min_x = 0.0
+bpy.context.scene.render.border_min_y = 0.0
+bpy.context.scene.render.border_max_y = 1.0
+bpy.context.scene.render.use_compositing = bool(False)
+
+            "#
+            .to_string(),
+        };
+
+        eprintln!("done");
+        eprintln!("v={:?}", b.into_spec().unwrap())
+    }
+
 }

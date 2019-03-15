@@ -7,10 +7,10 @@ pub struct Args {
     pub listen_port: u16,
 
     // Address for gateway server
-    #[structopt(long="gw", default_value="http://127.0.0.1:55001/")]
+    #[structopt(long = "gw", default_value = "http://127.0.0.1:55001/")]
     pub gw_addr: String,
 
     // Address for webdav server,
-    #[structopt(long="dav", default_value = "http://127.0.0.1:55010")]
-    pub dav_addr : String,
+    #[structopt(long = "dav", default_value = "http://127.0.0.1:55010")]
+    pub dav_addr: String,
 }

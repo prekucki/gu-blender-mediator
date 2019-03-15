@@ -37,7 +37,7 @@ impl State {
 }
 
 struct TaskWorker {
-    gw_url : String,
+    gw_url: String,
     api: Rc<dyn golem_gw_api::apis::DefaultApi>,
     hub_session: gu_client::r#async::HubSessionRef,
     deployment: Option<gu_client::r#async::PeerSession>,
@@ -52,7 +52,7 @@ struct TaskWorker {
 
 impl TaskWorker {
     fn new(
-        gw_url : String,
+        gw_url: String,
         api: &Rc<dyn golem_gw_api::apis::DefaultApi>,
         hub_session: gu_client::r#async::HubSessionRef,
         node_id: &str,
@@ -136,7 +136,10 @@ impl TaskWorker {
                         .subtask_result(
                             &act.node_id,
                             act.subtask_id.as_ref().unwrap(),
-                            golem_gw_api::models::SubtaskResult::new("succeeded".into(), result_path),
+                            golem_gw_api::models::SubtaskResult::new(
+                                "succeeded".into(),
+                                result_path,
+                            ),
                         )
                         .map_err(|e| eprintln!("fail send result: {}", e))
                         .and_then(|r| Ok(eprintln!("done")))
@@ -168,8 +171,11 @@ impl Handler<DoSubTask> for TaskWorker {
     fn handle(&mut self, msg: DoSubTask, ctx: &mut Self::Context) -> Self::Result {
         use gu_client::model::envman::Command;
         eprintln!("update subtask {:?}", msg.0);
+        //eprintln!("e={}", serde_json::to_string_pretty(msg.0.extra_data()).unwrap_or_else(|_e| "<err>".into()));
+
         let mut extra_data: blender::BlenderTaskSpec =
-            serde_json::from_value(msg.0.extra_data().clone()).unwrap();
+            blender::decode(msg.0.extra_data().clone()).unwrap();
+
         extra_data.normalize_path();
         eprintln!("\n\n{:?}\n\n", extra_data);
         self.spec = Some(extra_data.clone());
@@ -292,7 +298,7 @@ impl Actor for TaskWorker {
 }
 
 struct Gateway {
-    gw_url : String,
+    gw_url: String,
     base_url: String,
     api: Option<std::rc::Rc<dyn golem_gw_api::apis::DefaultApi>>,
     hub_session: Option<gu_client::r#async::HubSessionRef>,
@@ -301,7 +307,7 @@ struct Gateway {
 }
 
 impl Gateway {
-    fn new(gw_url : String, base_url: String) -> Gateway {
+    fn new(gw_url: String, base_url: String) -> Gateway {
         Gateway {
             gw_url,
             base_url,
@@ -342,8 +348,13 @@ impl Gateway {
             .subscribe(
                 self.node_id(),
                 self.task_type(),
-                golem_gw_api::models::Subscription::new(1, 6, 3 * 1024 * 1024 * 512, 3 * 1024 * 1024 * 512)
-                    .with_performance(1000f32),
+                golem_gw_api::models::Subscription::new(
+                    1,
+                    6,
+                    3 * 1024 * 1024 * 512,
+                    3 * 1024 * 1024 * 512,
+                )
+                .with_performance(1000f32),
             )
             .and_then(|s| Ok(eprintln!("status={:?}", s)))
             .from_err()
