@@ -364,6 +364,7 @@ impl Gateway {
         let http_client = hyper::client::Client::new();
         let mut api_configuration =
             golem_gw_api::apis::configuration::Configuration::new(http_client);
+        log::info!("Brass Gateway url={}", self.base_url);
         api_configuration.base_path = self.base_url.clone();
         let api = Rc::new(golem_gw_api::apis::DefaultApiClient::new(Rc::new(
             api_configuration,
@@ -512,15 +513,17 @@ impl Actor for Gateway {
 
         let f = self
             .new_subscription()
-            .map_err(|e| eprintln!("error {:?}", e));
-        ctx.spawn(
-            f.into_actor(self)
-                .and_then(|_, act, ctx| act.pump_events(ctx)),
-        );
+            .into_actor(self)
+            .map_err(|e, act: &mut Gateway, ctx| {
+                log::error!("Unable to update subscription: {}", e);
+                ctx.stop()
+            });
+        ctx.spawn(f.and_then(|_, act, ctx| act.pump_events(ctx)));
     }
 }
 
 fn main() {
+    env_logger::init();
     let args = args::Args::from_args();
 
     let gw = Gateway::new(args.dav_addr, args.gw_addr).start();

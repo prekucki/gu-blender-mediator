@@ -97,15 +97,7 @@ impl Handler<GiveMeNode> for WorkMan {
                     if let Some(&it) = c.choose(&mut rng) {
                         act.reservations
                             .insert(it.clone(), Reservation::new(msg.task_id, msg.deadline));
-                        //fut::ok(it)
-                        fut::ok(
-                            // reqc desktop: "0xf6140a03926b0801cd891d2d128ebd8dffbda252"
-                            // 2rec mac "0xc61f511ac893743475962776b01c7e65c309ced6"
-                            // awokado
-                            "0x5512cfe2e1a7f8feb9826eeeb327bd3dc7e0ffaf"
-                                .parse()
-                                .unwrap(),
-                        )
+                        fut::ok(it)
                     } else {
                         fut::err(NoFreeNode)
                     }
