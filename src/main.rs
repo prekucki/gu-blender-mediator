@@ -270,24 +270,29 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
 
         let sV = &msg.0;
         if sV.verification_result() != "OK" {
-            let reason = sV.reason().expect("negative verification should have reason");
+            let reason = sV
+                .reason()
+                .expect("negative verification should have reason");
             eprintln!("verification failurel reason={:?}", reason);
-            return ActorResponse::reply(Err(gu_client::error::Error::Other(
-                format!("subtask {} result not accepted: {}", sV.subtask_id(), reason),
-            )));
+            return ActorResponse::reply(Err(gu_client::error::Error::Other(format!(
+                "subtask {} result not accepted: {}",
+                sV.subtask_id(),
+                reason
+            ))));
         }
 
         ActorResponse::r#async(
-            self
-                .api
+            self.api
                 .want_to_compute_task(&self.node_id, self.task.task_id())
                 .into_actor(self)
                 .and_then(|m, act, ctx| fut::ok(eprintln!("WTCT message={:?}", m)))
-                .map_err(|e, _, _| { eprintln!("WTCT err={:?}", e); gu_client::error::Error::Other(e.to_string()) } )
+                .map_err(|e, _, _| {
+                    eprintln!("WTCT err={:?}", e);
+                    gu_client::error::Error::Other(e.to_string())
+                }),
         )
     }
 }
-
 
 impl Actor for TaskWorker {
     type Context = Context<Self>;

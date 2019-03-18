@@ -1,7 +1,7 @@
+use failure::Fail;
 use futures::{future, prelude::*};
 use gu_client::model::envman::{CreateSession, Image};
 use gu_client::r#async::{Peer, PeerSession};
-use failure::Fail;
 use regex::Captures;
 use serde_derive::*;
 use std::io;
@@ -28,10 +28,10 @@ struct ScriptData {
 }
 
 #[inline]
-fn unwrap_val<T>(val : Option<T>, name : &'static str) -> Result<T, ErrorMissingField> {
+fn unwrap_val<T>(val: Option<T>, name: &'static str) -> Result<T, ErrorMissingField> {
     match val {
         Some(v) => Ok(v),
-        None => Err(ErrorMissingField(name))
+        None => Err(ErrorMissingField(name)),
     }
 }
 
@@ -43,7 +43,6 @@ macro_rules! data_getter {
         }
     }
 }
-
 
 impl ScriptData {
     fn update_from_script(&mut self, key: &str, val: &str) -> failure::Fallible<()> {
@@ -114,8 +113,8 @@ impl OldBlenderTaskSpec {
             crops: vec![Crop {
                 borders_x: (data.border_min_x()?, data.border_max_x()?),
                 borders_y: (data.border_min_y()?, data.border_max_y()?),
-                outfilebasename: self.outfilebasename
-            }]
+                outfilebasename: self.outfilebasename,
+            }],
         })
     }
 }
