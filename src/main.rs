@@ -256,6 +256,39 @@ impl Handler<DoResource> for TaskWorker {
     }
 }
 
+struct DoSubtaskVerification(golem_gw_api::models::SubtaskVerification);
+
+impl Message for DoSubtaskVerification {
+    type Result = Result<(), gu_client::error::Error>;
+}
+
+impl Handler<DoSubtaskVerification> for TaskWorker {
+    type Result = ActorResponse<TaskWorker, (), gu_client::error::Error>;
+
+    fn handle(&mut self, msg: DoSubtaskVerification, ctx: &mut Self::Context) -> Self::Result {
+        use gu_client::model::envman::{Command, ResourceFormat};
+
+        let sV = &msg.0;
+        if sV.verification_result() != "OK" {
+            let reason = sV.reason().expect("negative verification should have reason");
+            eprintln!("verification failurel reason={:?}", reason);
+            return ActorResponse::reply(Err(gu_client::error::Error::Other(
+                format!("subtask {} result not accepted: {}", sV.subtask_id(), reason),
+            )));
+        }
+
+        ActorResponse::r#async(
+            self
+                .api
+                .want_to_compute_task(&self.node_id, self.task.task_id())
+                .into_actor(self)
+                .and_then(|m, act, ctx| fut::ok(eprintln!("WTCT message={:?}", m)))
+                .map_err(|e, _, _| { eprintln!("WTCT err={:?}", e); gu_client::error::Error::Other(e.to_string()) } )
+        )
+    }
+}
+
+
 impl Actor for TaskWorker {
     type Context = Context<Self>;
 
@@ -264,8 +297,8 @@ impl Actor for TaskWorker {
             .api
             .want_to_compute_task(&self.node_id, self.task.task_id())
             .into_actor(self)
-            .and_then(|m, act, ctx| fut::ok(eprintln!("message={:?}", m)))
-            .map_err(|e, _, _| eprintln!("err={:?}", e));
+            .and_then(|m, act, ctx| fut::ok(eprintln!("WTCT message={:?}", m)))
+            .map_err(|e, _, _| eprintln!("WTCT err={:?}", e));
 
         let create_deployment =
             workman::reserve(self.task.task_id(), (*self.task.deadline()) as u64)
@@ -410,6 +443,13 @@ impl Gateway {
                 worker.do_send(DoResource(resource.clone()))
             } else {
                 eprintln!("no worker for: {}", resource.task_id());
+            }
+            self.ack_event(ev);
+        } else if let Some(subtask_verification) = ev.subtask_verification() {
+            if let Some(worker) = self.tasks.get(subtask_verification.task_id()) {
+                worker.do_send(DoSubtaskVerification(subtask_verification.clone()))
+            } else {
+                eprintln!("no worker for: {}", subtask_verification.task_id());
             }
             self.ack_event(ev);
         } else {
