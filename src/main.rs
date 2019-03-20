@@ -320,16 +320,16 @@ impl Actor for TaskWorker {
                             .into_actor(act)
                             .map_err(|e, act, _| {
                                 eprintln!("unable to create deployment @ peer: {:?}, err: {}", act.peer_id.unwrap(), e);
-                                // TODO: rather try to re-deploy or use another peer instead
-                                let _cancel = act.api
-                                    .cancel_subtask(&act.node_id, act.subtask_id.as_ref().unwrap())
-                                    .into_actor(act)
-                                    .and_then(|_, act, _| fut::ok(eprintln!("subtask {:?} cancelled", act.peer_id.unwrap())))
-                                    .map_err(|e, act, _| {
-                                        eprintln!("fail to cancel subtask {}: {}", act.subtask_id.as_ref().unwrap(), e);
-                                        gu_client::error::Error::Other(e.to_string())
-                                    });
-                                ()
+                                // TODO: try to re-deploy or use another peer instead
+//                                let _cancel = act.api
+//                                    .cancel_subtask(&act.node_id, act.subtask_id.as_ref().unwrap())
+//                                    .into_actor(act)
+//                                    .and_then(|_, act, _| fut::ok(eprintln!("subtask {:?} cancelled", act.peer_id.unwrap())))
+//                                    .map_err(|e, act, _| {
+//                                        eprintln!("fail to cancel subtask {}: {}", act.subtask_id.as_ref().unwrap(), e);
+//                                        gu_client::error::Error::Other(e.to_string())
+//                                    });
+//                                ()
                             })
                             .and_then(
                                 |deployment, act: &mut TaskWorker, _| {
