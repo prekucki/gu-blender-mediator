@@ -5,7 +5,7 @@ authors = ["Przemysław K. Rekucki <przemyslaw.rekucki@golem.network>"]
 edition = "2018"
 
 [dependencies]
-gu-client = { git="https://github.com/golemfactory/golem-unlimited.git", branch="feature/blender" }
+gu-client = { git="https://github.com/golemfactory/golem-unlimited.git", branch="release/0.2" }
 golem_gw_api={git="https://github.com/prekucki/golem-gw-client.git"}
 structopt= { version="0.2.14"}
 actix = "0.7"

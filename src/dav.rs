@@ -6,7 +6,6 @@ use bytes::Bytes;
 use failure::*;
 use futures::prelude::*;
 use futures::stream::Stream;
-use futures::Sink;
 use lazy_static::*;
 
 lazy_static! {
@@ -19,8 +18,6 @@ pub struct DavPath {
 
 #[derive(Debug, Fail)]
 pub enum Error {
-    #[fail(display = "{}", _0)]
-    Other(&'static str),
     #[fail(display = "http status {}", _0)]
     HttpStatus(u16),
     #[fail(display = "{}", _0)]

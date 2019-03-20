@@ -14,7 +14,7 @@ impl<F: ActorFuture> Either<F> {
     ) -> Result<futures::Async<()>, F::Error> {
         let r = match self {
             Either::Pending(f) => f.poll(srv, ctx),
-            Either::Ready(it) => return Ok(futures::Async::Ready(())),
+            Either::Ready(_it) => return Ok(futures::Async::Ready(())),
             Either::None => panic!("unexpected state none"),
         };
         let it = match r {

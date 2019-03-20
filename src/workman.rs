@@ -1,11 +1,12 @@
-use actix::prelude::*;
-use actix::Context;
-use failure::*;
-use futures::prelude::*;
-use gu_client::{r#async::HubConnection, NodeId};
-use rand::prelude::*;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use actix::Context;
+use actix::prelude::*;
+use failure::*;
+use futures::prelude::*;
+use gu_client::{NodeId, r#async::HubConnection};
+use rand::prelude::*;
 
 #[derive(Debug, Fail)]
 #[fail(display = "no free node")]
@@ -79,13 +80,13 @@ impl Message for GiveMeNode {
 impl Handler<GiveMeNode> for WorkMan {
     type Result = ActorResponse<Self, NodeId, NoFreeNode>;
 
-    fn handle(&mut self, msg: GiveMeNode, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: GiveMeNode, _ctx: &mut Self::Context) -> Self::Result {
         ActorResponse::r#async(
             self.connection
                 .list_peers()
                 .into_actor(self)
                 .map_err(|_, _act, _ctx| NoFreeNode)
-                .and_then(move |peers, act, ctx| {
+                .and_then(move |peers, act, _ctx| {
                     let c: Vec<NodeId> = peers
                         .map(|p| p.node_id)
                         .filter(|&p| act.is_free_to_use(p))

@@ -1,11 +1,10 @@
+use std::io;
+
 use failure::Fail;
 use futures::{future, prelude::*};
 use gu_client::model::envman::{CreateSession, Image};
 use gu_client::r#async::{Peer, PeerSession};
-use regex::Captures;
 use serde_derive::*;
-use std::io;
-use std::ops::*;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OldBlenderTaskSpec {

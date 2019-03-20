@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]

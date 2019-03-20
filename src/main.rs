@@ -1,25 +1,24 @@
-mod args;
+use std::collections::HashMap;
+use std::ops::Deref as _;
+use std::rc::Rc;
+use std::time::Duration;
 
-use crate::workman::WorkMan;
 use actix::prelude::*;
-use actix_web::{http, server, App, HttpRequest, Path, Responder};
+use actix_web::{App, http, HttpRequest, Responder, server};
 use futures::prelude::*;
 use golem_gw_api::models::Subtask;
 use gu_client::NodeId;
 use hyper;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::ops::Deref as _;
-use std::rc::Rc;
-use std::time::Duration;
 use structopt::StructOpt;
+
+mod args;
 
 mod blender;
 mod dav;
 mod joinact;
 mod workman;
 
-fn index(r: HttpRequest) -> impl Responder {
+fn index(_r: HttpRequest) -> impl Responder {
     format!("Hello")
 }
 
@@ -75,18 +74,15 @@ impl TaskWorker {
 
     fn resource_ready(&mut self, ctx: &mut <Self as Actor>::Context) {
         self.state.resource_ready = true;
-        eprintln!("new state={:?}", self.state);
+        eprintln!("resource ready: state: {:?}", self.state);
         if self.state.is_ready() {
             self.start_processing(ctx)
         }
     }
 
-    fn spec_ready(&mut self, ctx: &mut <Self as Actor>::Context) {
+    fn spec_ready(&mut self, _ctx: &mut <Self as Actor>::Context) {
         self.state.spec_ready = true;
-        eprintln!("new state={:?}", self.state);
-        if self.state.is_ready() {
-            self.start_processing(ctx)
-        }
+        eprintln!("spec ready; state: {:?}", self.state);
     }
 
     fn start_processing(&mut self, ctx: &mut <Self as Actor>::Context) {
@@ -106,8 +102,8 @@ impl TaskWorker {
         let result_path = format!("{}/output", self.task.task_id());
 
         eprintln!(
-            "starting blendering!! file={}, output={}",
-            output_path, output_uri
+            "\n\nstarting blendering!!\n  subtask={}, file={}, output={}\n",
+            self.subtask_id.clone().unwrap(), output_path, output_uri
         );
         let compute = self.hub_session.new_blob().and_then(move |b| {
             deployment.update(vec![
@@ -129,9 +125,9 @@ impl TaskWorker {
         ctx.spawn(
             compute
                 .into_actor(self)
-                .map_err(|e, _, _| eprintln!("fail blendering"))
-                .and_then(|r, act: &mut TaskWorker, ctx| {
-                    eprintln!("done results in {}", result_path);
+                .map_err(|e, _, _| eprintln!("\n\nblendering failed!!\n  err: {}", e))
+                .and_then(|r, act: &mut TaskWorker, _ctx| {
+                    eprintln!("\n\nblendering done!!\n  results in: {}\n  {:?}", result_path, r);
                     act.api
                         .subtask_result(
                             &act.node_id,
@@ -142,18 +138,8 @@ impl TaskWorker {
                             ),
                         )
                         .map_err(|e| eprintln!("fail send result: {}", e))
-                        .and_then(|r| Ok(eprintln!("done")))
+                        .and_then(|_r| Ok(eprintln!("sending results done")))
                         .into_actor(act)
-                }),
-        );
-        let _ = ctx.spawn(
-            self.api
-                .confirm_subtask(&self.node_id, self.task.task_id())
-                .into_actor(self)
-                .map_err(|e, act, _| eprintln!("confirm subtask failure: {}", e))
-                .and_then(|r, _, _| {
-                    eprintln!("subtask confirmend");
-                    fut::ok(())
                 }),
         );
     }
@@ -170,16 +156,27 @@ impl Handler<DoSubTask> for TaskWorker {
 
     fn handle(&mut self, msg: DoSubTask, ctx: &mut Self::Context) -> Self::Result {
         use gu_client::model::envman::Command;
-        eprintln!("update subtask {:?}", msg.0);
-        //eprintln!("e={}", serde_json::to_string_pretty(msg.0.extra_data()).unwrap_or_else(|_e| "<err>".into()));
 
         let mut extra_data: blender::BlenderTaskSpec =
             blender::decode(msg.0.extra_data().clone()).unwrap();
 
         extra_data.normalize_path();
-        eprintln!("\n\n{:?}\n\n", extra_data);
+        eprintln!("\n\nsubtask {} extra data: {:?}\n\n", msg.0.subtask_id(), extra_data);
         self.spec = Some(extra_data.clone());
         self.subtask_id = Some(msg.0.subtask_id().clone());
+
+
+        let _ = ctx.spawn(
+            self.api
+                .confirm_subtask(&self.node_id, self.subtask_id.as_ref().unwrap())
+                .into_actor(self)
+                .map_err(|e, act, _| eprintln!("subtask {:?} confirmation failure: {}",
+                                               act.subtask_id, e))
+                .and_then(|_r, act, _| {
+                    eprintln!("subtask {:?} confirmed", act.subtask_id);
+                    fut::ok(())
+                }),
+        );
 
         let deployment = match self.deployment.as_ref() {
             Some(d) => d,
@@ -196,9 +193,9 @@ impl Handler<DoSubTask> for TaskWorker {
         }]);
 
         ActorResponse::r#async(upload_spec.into_actor(self).and_then(
-            |r, act: &mut TaskWorker, ctx| {
+            |_r, act: &mut TaskWorker, ctx| {
                 act.spec_ready(ctx);
-                fut::ok(eprintln!("spec: {:?}", r))
+                fut::ok(())
             },
         ))
     }
@@ -238,7 +235,7 @@ impl Handler<DoResource> for TaskWorker {
         let create_output = dav::DavPath::new(task_uri.parse().unwrap())
             .mkdir("output")
             .into_actor(self)
-            .map_err(|e, _, _| eprintln!("unable to create output dir"))
+            .map_err(|_e, act, _| eprintln!("unable to create output dir at {}/{}", act.gw_url, act.task.task_id()))
             .and_then(|r, act: &mut TaskWorker, _| {
                 act.output_uri = r.to_string();
                 fut::ok(())
@@ -246,11 +243,11 @@ impl Handler<DoResource> for TaskWorker {
 
         let _ = ctx.spawn(create_output);
 
-        eprintln!("resource = {:?}", msg.0);
+        eprintln!("got resource; path: {}", r.path());
         ActorResponse::r#async(upload_zip.into_actor(self).and_then(
             |r, act: &mut TaskWorker, ctx| {
                 act.resource_ready(ctx);
-                fut::ok(eprintln!("download-file: {:?}", r))
+                fut::ok(eprintln!("download-file for {}/{}: {:?}", act.gw_url, act.task.task_id(), r))
             },
         ))
     }
@@ -265,29 +262,29 @@ impl Message for DoSubtaskVerification {
 impl Handler<DoSubtaskVerification> for TaskWorker {
     type Result = ActorResponse<TaskWorker, (), gu_client::error::Error>;
 
-    fn handle(&mut self, msg: DoSubtaskVerification, ctx: &mut Self::Context) -> Self::Result {
-        use gu_client::model::envman::{Command, ResourceFormat};
+    fn handle(&mut self, msg: DoSubtaskVerification, _ctx: &mut Self::Context) -> Self::Result {
 
-        let sV = &msg.0;
-        if sV.verification_result() != "OK" {
-            let reason = sV
+        let s_v = &msg.0;
+        if s_v.verification_result() != "OK" {
+            let reason = s_v
                 .reason()
                 .expect("negative verification should have reason");
-            eprintln!("verification failurel reason={:?}", reason);
+            eprintln!("verification of {} failure : {:?}", s_v.subtask_id(), reason);
             return ActorResponse::reply(Err(gu_client::error::Error::Other(format!(
                 "subtask {} result not accepted: {}",
-                sV.subtask_id(),
+                s_v.subtask_id(),
                 reason
             ))));
         }
 
+        eprintln!("subtask {} verified successfully", s_v.subtask_id());
         ActorResponse::r#async(
             self.api
                 .want_to_compute_task(&self.node_id, self.task.task_id())
                 .into_actor(self)
-                .and_then(|m, act, ctx| fut::ok(eprintln!("WTCT message={:?}", m)))
+                .and_then(|m, _, _| fut::ok(eprintln!("want to compute (next) task send: {:?}", m)))
                 .map_err(|e, _, _| {
-                    eprintln!("WTCT err={:?}", e);
+                    eprintln!("want to compute (next) task failed: {:?}", e);
                     gu_client::error::Error::Other(e.to_string())
                 }),
         )
@@ -302,26 +299,38 @@ impl Actor for TaskWorker {
             .api
             .want_to_compute_task(&self.node_id, self.task.task_id())
             .into_actor(self)
-            .and_then(|m, act, ctx| fut::ok(eprintln!("WTCT message={:?}", m)))
-            .map_err(|e, _, _| eprintln!("WTCT err={:?}", e));
+            .and_then(|m, _, _| fut::ok(eprintln!("want to compute (first) task send: {:?}", m)))
+            .map_err(|e, _, _| eprintln!("want to compute (first) task failed: {:?}", e));
 
         let create_deployment =
             workman::reserve(self.task.task_id(), (*self.task.deadline()) as u64)
                 .map_err(|_| /*TODO*/())
                 .into_actor(self)
-                .and_then(|peer_id, act: &mut TaskWorker, ctx| {
+                .and_then(|peer_id, act: &mut TaskWorker, _ctx| {
                     act.peer_id = Some(peer_id);
                     act.hub_session
                         .add_peers(vec![peer_id])
                         .into_actor(act)
-                        .map_err(|e, _, _| eprintln!("fail to add peer: {}", e))
-                        .and_then(|_, act: &mut TaskWorker, ctx| {
+                        .map_err(|e, act, _| eprintln!("fail to add peer {:?}: {}", act.peer_id.unwrap(), e))
+                        .and_then(|_, act: &mut TaskWorker, _| {
                             blender::blender_deployment_spec(
                                 act.hub_session.peer(act.peer_id.unwrap()),
                                 true,
                             )
                             .into_actor(act)
-                            .map_err(|e, _, _| eprintln!("unable to create deployment: {}", e))
+                            .map_err(|e, act, _| {
+                                eprintln!("unable to create deployment @ peer: {:?}, err: {}", act.peer_id.unwrap(), e);
+                                // TODO: rather try to re-deploy or use another peer instead
+                                let _cancel = act.api
+                                    .cancel_subtask(&act.node_id, act.subtask_id.as_ref().unwrap())
+                                    .into_actor(act)
+                                    .and_then(|_, act, _| fut::ok(eprintln!("subtask {:?} cancelled", act.peer_id.unwrap())))
+                                    .map_err(|e, act, _| {
+                                        eprintln!("fail to cancel subtask {}: {}", act.subtask_id.as_ref().unwrap(), e);
+                                        gu_client::error::Error::Other(e.to_string())
+                                    });
+                                ()
+                            })
                             .and_then(
                                 |deployment, act: &mut TaskWorker, _| {
                                     act.deployment = Some(deployment);
@@ -395,7 +404,7 @@ impl Gateway {
                 )
                 .with_performance(1000f32),
             )
-            .and_then(|s| Ok(eprintln!("status={:?}", s)))
+            .and_then(|s| Ok(eprintln!("status: {:?}", s)))
             .from_err()
     }
 
@@ -408,25 +417,24 @@ impl Gateway {
             .from_err()
     }
 
-    fn ack_event(&mut self, ev: &golem_gw_api::models::Event) {
+    fn ack_event(&mut self, event_id: i64, event_hash: &str) {
         eprintln!(
-            "event_id={}/{}: {:?}",
-            ev.event_id(),
+            "event processed: {}/{}: {}",
+            event_id,
             self.last_event_id,
-            ev
+            event_hash
         );
-        if self.last_event_id < ev.event_id() {
-            self.last_event_id = ev.event_id();
+        if self.last_event_id < event_id {
+            self.last_event_id = event_id;
         }
     }
 
     fn process_event(
         &mut self,
         ev: &golem_gw_api::models::Event,
-        ctx: &mut <Self as Actor>::Context,
+        _ctx: &mut <Self as Actor>::Context,
     ) {
         if let Some(task) = ev.task() {
-            eprintln!("processing event={:?}", ev);
             let worker = TaskWorker::new(
                 self.gw_url.clone(),
                 self.api.as_ref().unwrap(),
@@ -436,28 +444,29 @@ impl Gateway {
             )
             .start();
             self.tasks.insert(task.task_id().to_owned(), worker);
-            self.ack_event(ev);
+            self.ack_event(ev.event_id(), task.task_id());
         } else if let Some(subtask) = ev.subtask() {
             if let Some(worker) = self.tasks.get(subtask.task_id()) {
                 worker.do_send(DoSubTask(subtask.clone()))
             } else {
                 eprintln!("no worker for: {}", subtask.task_id());
             }
-            self.ack_event(ev);
+            self.ack_event(ev.event_id(), subtask.subtask_id());
         } else if let Some(resource) = ev.resource() {
             if let Some(worker) = self.tasks.get(resource.task_id()) {
                 worker.do_send(DoResource(resource.clone()))
             } else {
                 eprintln!("no worker for: {}", resource.task_id());
             }
-            self.ack_event(ev);
+            self.ack_event(ev.event_id(), resource.path());
         } else if let Some(subtask_verification) = ev.subtask_verification() {
             if let Some(worker) = self.tasks.get(subtask_verification.task_id()) {
                 worker.do_send(DoSubtaskVerification(subtask_verification.clone()))
             } else {
                 eprintln!("no worker for: {}", subtask_verification.task_id());
             }
-            self.ack_event(ev);
+            self.ack_event(ev.event_id(), &format!("subtask {} verification: {}",
+                subtask_verification.subtask_id(), subtask_verification.verification_result()));
         } else {
             eprintln!("invalid event={:?}", ev);
         }
@@ -470,7 +479,7 @@ impl Gateway {
         ctx.run_interval(Duration::from_secs(1), |act, ctx| {
             let f = act
                 .poll_events(ctx)
-                .map_err(|e| eprintln!("err={}", e))
+                .map_err(|e| eprintln!("polling events failed: {}", e))
                 .into_actor(act)
                 .and_then(|events, act, ctx| {
                     for ev in events {
@@ -488,7 +497,7 @@ impl Actor for Gateway {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let api = self.init_api();
+        let _api = self.init_api();
 
         let hub_connection = gu_client::r#async::HubConnection::default();
 
@@ -496,12 +505,12 @@ impl Actor for Gateway {
             .new_session(gu_client::model::session::HubSessionSpec {
                 expires: None,
                 allocation: gu_client::model::session::AllocationMode::AUTO,
-                name: Some(format!("gu-mediator bledering")),
+                name: Some(format!("gu-mediator blendering")),
                 tags: std::collections::BTreeSet::new(),
             })
             .into_actor(self)
-            .map_err(|e, _, ctx| {
-                eprintln!("failed to create hub session: {}", e);
+            .map_err(|e, act, ctx| {
+                eprintln!("failed to create hub session {:?}: {}", act.hub_session, e);
                 ctx.stop()
             })
             .and_then(|h, mut act, _| {
@@ -514,7 +523,7 @@ impl Actor for Gateway {
         let f = self
             .new_subscription()
             .into_actor(self)
-            .map_err(|e, act: &mut Gateway, ctx| {
+            .map_err(|e, _act: &mut Gateway, ctx| {
                 log::error!("Unable to update subscription: {}", e);
                 ctx.stop()
             });
@@ -526,7 +535,7 @@ fn main() {
     env_logger::init();
     let args = args::Args::from_args();
 
-    let gw = Gateway::new(args.dav_addr, args.gw_addr).start();
+    let _gw = Gateway::new(args.dav_addr, args.gw_addr).start();
     //let client = ::hyper::client::Client::
     //golem_gw_api::apis::configuration::Configuration::new()
 
