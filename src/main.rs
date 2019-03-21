@@ -174,6 +174,15 @@ impl Handler<DoSubTask> for TaskWorker {
         self.spec = Some(extra_data.clone());
         self.subtask_id = Some(msg.0.subtask_id().clone());
 
+        let deployment = match self.deployment.as_ref() {
+            Some(d) => d,
+            None => {
+                return ActorResponse::reply(Err(gu_client::error::Error::Other(
+                    "deployment not ready".into(),
+                )));
+            }
+        };
+
         let _ = ctx.spawn(
             self.api
                 .confirm_subtask(&self.node_id, self.subtask_id.as_ref().unwrap())
@@ -186,15 +195,6 @@ impl Handler<DoSubTask> for TaskWorker {
                     fut::ok(())
                 }),
         );
-
-        let deployment = match self.deployment.as_ref() {
-            Some(d) => d,
-            None => {
-                return ActorResponse::reply(Err(gu_client::error::Error::Other(
-                    "deployment not ready".into(),
-                )));
-            }
-        };
 
         let upload_spec = deployment.update(vec![Command::WriteFile {
             file_path: "golem/resources/spec.json".to_string(),
@@ -315,64 +315,54 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
 }
 
 impl TaskWorker {
-    fn create_deployment(
-        &self,
-        ctx: &mut <Self as Actor>::Context,
-    ) -> Box<dyn ActorFuture<Actor = TaskWorker, Item = (), Error = ()>> {
-        Box::new(workman::reserve(self.task.task_id(), (*self.task.deadline()) as u64)
-            .map_err(|_| /*TODO*/())
-            .into_actor(self)
-            .and_then(|peer_id, act: &mut TaskWorker, _ctx| {
-                act.peer_id = Some(peer_id);
-                act.hub_session
-                    .add_peers(vec![peer_id])
-                    .into_actor(act)
-                    .map_err(|e, act, _| {
-                        eprintln!("fail to add peer {:?}: {}", act.peer_id.unwrap(), e)
-                    })
-                    .and_then(|_, act: &mut TaskWorker, _| {
-                        blender::blender_deployment_spec(
-                            act.hub_session.peer(act.peer_id.unwrap()),
-                            true,
-                        )
+    fn create_deployment(&self) -> Box<dyn ActorFuture<Actor = TaskWorker, Item = (), Error = ()>> {
+        Box::new(
+            workman::reserve(self.task.task_id(), (*self.task.deadline()) as u64)
+                .map_err(|_| /*TODO*/())
+                .into_actor(self)
+                .and_then(|peer_id, act: &mut TaskWorker, _| {
+                    act.peer_id = Some(peer_id);
+                    act.hub_session
+                        .add_peers(vec![peer_id])
                         .into_actor(act)
                         .map_err(|e, act, _| {
-                            eprintln!(
-                                "unable to create deployment @ peer: {:?}, err: {}",
-                                act.peer_id.unwrap(),
-                                e
-                            );
-                            // TODO: try to re-deploy or use another peer instead
-                            //                                let _cancel = act.api
-                            //                                    .cancel_subtask(&act.node_id, act.subtask_id.as_ref().unwrap())
-                            //                                    .into_actor(act)
-                            //                                    .and_then(|_, act, _| fut::ok(eprintln!("subtask {:?} cancelled", act.peer_id.unwrap())))
-                            //                                    .map_err(|e, act, _| {
-                            //                                        eprintln!("fail to cancel subtask {}: {}", act.subtask_id.as_ref().unwrap(), e);
-                            //                                        gu_client::error::Error::Other(e.to_string())
-                            //                                    });
-                            //                                ()
+                            eprintln!("fail to add peer {:?}: {}", act.peer_id.unwrap(), e)
                         })
-                        .and_then(|deployment, act: &mut TaskWorker, _| {
-                            act.deployment = Some(deployment);
-                            fut::ok(())
+                        .and_then(|_, act: &mut TaskWorker, _| {
+                            blender::blender_deployment_spec(
+                                act.hub_session.peer(act.peer_id.unwrap()),
+                                true,
+                            )
+                            .into_actor(act)
+                            .map_err(|e, act, _| {
+                                eprintln!(
+                                    "unable to create deployment @ peer: {:?}, err: {}",
+                                    act.peer_id.unwrap(),
+                                    e
+                                )
+                            })
+                            .and_then(
+                                |deployment, act: &mut TaskWorker, _| {
+                                    act.deployment = Some(deployment);
+                                    fut::ok(())
+                                },
+                            )
                         })
-                    })
-            }))
+                }),
+        )
     }
 
     fn create_deployment_with_retry(
         &self,
-        ctx: &mut <Self as Actor>::Context,
         retry_cnt: u32,
     ) -> Box<dyn ActorFuture<Actor = TaskWorker, Item = (), Error = ()>> {
-        Box::new(self.create_deployment(ctx).then(move |r, act, ctx| match r {
+        Box::new(self.create_deployment().then(move |r, act, _| match r {
             Ok(v) => actix::fut::Either::A(fut::ok(v)),
-            Err(_e) => {
+            Err(e) => {
                 if retry_cnt > 0 {
-                    actix::fut::Either::B(act.create_deployment_with_retry(ctx, retry_cnt - 1))
+                    actix::fut::Either::B(act.create_deployment_with_retry(retry_cnt - 1))
                 } else {
-                    actix::fut::Either::A(fut::err(()))
+                    actix::fut::Either::A(fut::err(e))
                 }
             }
         }))
@@ -383,19 +373,17 @@ impl Actor for TaskWorker {
     type Context = Context<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        let ack_task = self
+        let get_subtask = self
             .api
             .want_to_compute_task(&self.node_id, self.task.task_id())
             .into_actor(self)
             .and_then(|m, _, _| fut::ok(eprintln!("want to compute (first) task send: {:?}", m)))
             .map_err(|e, _, _| eprintln!("want to compute (first) task failed: {:?}", e));
 
-        let create_deployment = self.create_deployment_with_retry(ctx, 5);
-        ctx.wait(joinact::join_act_fut(
-            ack_task,
-            create_deployment,
+        ctx.wait(
+            joinact::join_act_fut(get_subtask, self.create_deployment_with_retry(5))
+                .and_then(|_, _, _| fut::ok(())),
         )
-        .and_then(|_, _, _| fut::ok(())))
     }
 }
 
