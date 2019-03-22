@@ -19,7 +19,7 @@ pub struct DavPath {
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "http status {}", _0)]
-    HttpStatus(u16),
+    HttpStatus { status: u16, uri: String },
     #[fail(display = "{}", _0)]
     SendRequest(client::SendRequestError),
     #[fail(display = "{}", _0)]
@@ -66,7 +66,10 @@ impl DavPath {
             .and_then(|r| r.send().from_err())
             .and_then(move |r| match r.status() {
                 http::StatusCode::CREATED => Ok(DavPath { uri: new_uri }),
-                status => Err(Error::HttpStatus(status.as_u16())),
+                status => Err(Error::HttpStatus {
+                    status: status.as_u16(),
+                    uri: new_uri,
+                }),
             })
     }
 
@@ -90,7 +93,7 @@ impl DavPath {
                 if r.status().is_success() {
                     Ok(DavPath { uri: new_uri })
                 } else {
-                    Err(Error::HttpStatus(r.status().as_u16()))
+                    Err(Error::HttpStatus{ status: r.status().as_u16(), uri: new_uri})
                 }
             })
     }

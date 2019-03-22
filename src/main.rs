@@ -33,6 +33,10 @@ impl State {
     fn is_ready(&self) -> bool {
         self.resource_ready && self.spec_ready
     }
+
+    fn mark_subtask_start(&mut self) {
+        self.spec_ready = false;
+    }
 }
 
 struct TaskWorker {
@@ -74,19 +78,24 @@ impl TaskWorker {
 
     fn resource_ready(&mut self, ctx: &mut <Self as Actor>::Context) {
         self.state.resource_ready = true;
-        eprintln!("resource ready: state: {:?}", self.state);
+//        eprintln!("resource ready: state: {:?}", self.state);
         if self.state.is_ready() {
             self.start_processing(ctx)
         }
     }
 
-    fn spec_ready(&mut self, _ctx: &mut <Self as Actor>::Context) {
+    fn spec_ready(&mut self, ctx: &mut <Self as Actor>::Context) {
         self.state.spec_ready = true;
-        eprintln!("spec ready; state: {:?}", self.state);
+//        eprintln!("spec ready; state: {:?}", self.state);
+        if self.state.is_ready() {
+            self.start_processing(ctx)
+        }
     }
 
     fn start_processing(&mut self, ctx: &mut <Self as Actor>::Context) {
         use gu_client::model::envman::{Command, ResourceFormat};
+
+        self.state.mark_subtask_start();
 
         let deployment = match self.deployment.as_ref() {
             Some(d) => d.clone(),
@@ -102,10 +111,9 @@ impl TaskWorker {
         let result_path = format!("{}/output", self.task.task_id());
 
         eprintln!(
-            "\n\nstarting blendering!!\n  subtask={}, file={}, output={}\n",
+            "\n\nstarting blendering!!\n  subtask={}\n  file={}\n",
             self.subtask_id.clone().unwrap(),
-            output_path,
-            output_uri
+            output_path
         );
         let compute = self.hub_session.new_blob().and_then(move |b| {
             deployment.update(vec![
@@ -167,9 +175,9 @@ impl Handler<DoSubTask> for TaskWorker {
 
         extra_data.normalize_path();
         eprintln!(
-            "\n\nsubtask {} extra data: {:?}\n\n",
+            "\n\ngot subtask {}; extra data: {}\n\n",
             msg.0.subtask_id(),
-            extra_data
+            serde_json::to_string_pretty(&extra_data).unwrap()
         );
         self.spec = Some(extra_data.clone());
         self.subtask_id = Some(msg.0.subtask_id().clone());
@@ -222,7 +230,12 @@ impl Handler<DoResource> for TaskWorker {
     fn handle(&mut self, msg: DoResource, ctx: &mut Self::Context) -> Self::Result {
         use gu_client::model::envman::{Command, ResourceFormat};
 
+        if self.state.resource_ready {
+            return ActorResponse::reply(Ok(()))
+        }
+
         let r = &msg.0;
+        eprintln!("got resource for subtask {}", r.subtask_id());
         let zip_uri = format!("{}/{}/{}", self.gw_url, r.path(), r.task_id());
         let task_uri = format!("{}/{}", self.gw_url, r.task_id());
 
@@ -236,7 +249,7 @@ impl Handler<DoResource> for TaskWorker {
         };
 
         let upload_zip = deployment.update(vec![Command::DownloadFile {
-            uri: zip_uri,
+            uri: zip_uri.clone(),
             file_path: "/golem/resources/gu.zip".to_string(),
             format: ResourceFormat::Raw,
         }]);
@@ -244,13 +257,7 @@ impl Handler<DoResource> for TaskWorker {
         let create_output = dav::DavPath::new(task_uri.parse().unwrap())
             .mkdir("output")
             .into_actor(self)
-            .map_err(|_e, act, _| {
-                eprintln!(
-                    "unable to create output dir at {}/{}",
-                    act.gw_url,
-                    act.task.task_id()
-                )
-            })
+            .map_err(|e, _, _| eprintln!("unable to create output dir at {:?}", e))
             .and_then(|r, act: &mut TaskWorker, _| {
                 act.output_uri = r.to_string();
                 fut::ok(())
@@ -258,16 +265,10 @@ impl Handler<DoResource> for TaskWorker {
 
         let _ = ctx.spawn(create_output);
 
-        eprintln!("got resource; path: {}", r.path());
         ActorResponse::r#async(upload_zip.into_actor(self).and_then(
-            |r, act: &mut TaskWorker, ctx| {
+            move |r, act: &mut TaskWorker, ctx| {
                 act.resource_ready(ctx);
-                fut::ok(eprintln!(
-                    "download-file for {}/{}: {:?}",
-                    act.gw_url,
-                    act.task.task_id(),
-                    r
-                ))
+                fut::ok(eprintln!("resource downloaded for {}: {:?}", act.subtask_id.as_ref().unwrap(), r))
             },
         ))
     }
@@ -307,6 +308,7 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
                 .into_actor(self)
                 .and_then(|m, _, _| fut::ok(eprintln!("want to compute (next) task send: {:?}", m)))
                 .map_err(|e, _, _| {
+                    // TODO: clean-up after last subtask
                     eprintln!("want to compute (next) task failed: {:?}", e);
                     gu_client::error::Error::Other(e.to_string())
                 }),
@@ -447,7 +449,8 @@ impl Gateway {
                 )
                 .with_performance(1000f32),
             )
-            .and_then(|s| Ok(eprintln!("status: {:?}", s)))
+            .and_then(|s| Ok(eprintln!("status: {}",
+                                       serde_json::to_string_pretty(&s)?)))
             .from_err()
     }
 
@@ -460,11 +463,8 @@ impl Gateway {
             .from_err()
     }
 
-    fn ack_event(&mut self, event_id: i64, event_hash: &str) {
-        eprintln!(
-            "event processed: {}/{}: {}",
-            event_id, self.last_event_id, event_hash
-        );
+    fn ack_event(&mut self, event_id: i64) {
+        eprintln!("[ -[_] ] event processed: {}/{}", event_id, self.last_event_id);
         if self.last_event_id < event_id {
             self.last_event_id = event_id;
         }
@@ -485,35 +485,28 @@ impl Gateway {
             )
             .start();
             self.tasks.insert(task.task_id().to_owned(), worker);
-            self.ack_event(ev.event_id(), task.task_id());
+            self.ack_event(ev.event_id());
         } else if let Some(subtask) = ev.subtask() {
             if let Some(worker) = self.tasks.get(subtask.task_id()) {
                 worker.do_send(DoSubTask(subtask.clone()))
             } else {
                 eprintln!("no worker for: {}", subtask.task_id());
             }
-            self.ack_event(ev.event_id(), subtask.subtask_id());
+            self.ack_event(ev.event_id());
         } else if let Some(resource) = ev.resource() {
             if let Some(worker) = self.tasks.get(resource.task_id()) {
                 worker.do_send(DoResource(resource.clone()))
             } else {
                 eprintln!("no worker for: {}", resource.task_id());
             }
-            self.ack_event(ev.event_id(), resource.path());
+            self.ack_event(ev.event_id());
         } else if let Some(subtask_verification) = ev.subtask_verification() {
             if let Some(worker) = self.tasks.get(subtask_verification.task_id()) {
                 worker.do_send(DoSubtaskVerification(subtask_verification.clone()))
             } else {
                 eprintln!("no worker for: {}", subtask_verification.task_id());
             }
-            self.ack_event(
-                ev.event_id(),
-                &format!(
-                    "subtask {} verification: {}",
-                    subtask_verification.subtask_id(),
-                    subtask_verification.verification_result()
-                ),
-            );
+            self.ack_event(ev.event_id());
         } else {
             eprintln!("invalid event={:?}", ev);
         }
