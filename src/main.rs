@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use actix::prelude::*;
-use actix_web::{App, http, HttpRequest, Responder, server};
+use actix_web::{http, server, App, HttpRequest, Responder};
 use futures::prelude::*;
 use golem_gw_api::models::Subtask;
 use gu_client::NodeId;
@@ -15,16 +15,15 @@ mod args;
 
 mod blender;
 mod dav;
-mod joinact;
-mod workman;
 mod gateway;
-mod task_worker;
+mod joinact;
 mod subtask_worker;
+mod task_worker;
+mod workman;
 
 fn index(_r: HttpRequest) -> impl Responder {
     format!("Hello")
 }
-
 
 use gateway::Gateway;
 

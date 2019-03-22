@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use actix::Context;
 use actix::prelude::*;
+use actix::Context;
 use failure::*;
 use futures::prelude::*;
-use gu_client::{NodeId, r#async::HubConnection};
+use gu_client::{r#async::HubConnection, NodeId};
 use rand::prelude::*;
 
 #[derive(Debug, Fail)]

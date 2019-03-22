@@ -1,27 +1,23 @@
+use super::task_worker::{DoResource, DoSubTask, DoSubtaskVerification, TaskWorker};
+use actix::prelude::*;
 /** Module responsible for signle HUB session.
 
 Traces given hub session.
 
 **/
 use futures::prelude::*;
-use actix::prelude::*;
-use std::collections::HashMap;
 use gu_client::r#async::HubSessionRef;
+use std::collections::HashMap;
 use std::rc::Rc;
-use super::task_worker::{TaskWorker, DoSubTask, DoResource, DoSubtaskVerification};
 use std::time::Duration;
-
 
 struct GwSessionConfiguration {
     /// Etherium address for receiveing payments.
-    eth_addr : String,
-
-
+    eth_addr: String,
 }
 
 struct GatewaySession {
-    hub_session : HubSessionRef,
-
+    hub_session: HubSessionRef,
 }
 
 pub struct Gateway {
@@ -82,7 +78,7 @@ impl Gateway {
                     3 * 1024 * 1024 * 512,
                     3 * 1024 * 1024 * 512,
                 )
-                    .with_performance(1000f32),
+                .with_performance(1000f32),
             )
             .and_then(|s| Ok(eprintln!("status: {:?}", s)))
             .from_err()
@@ -100,9 +96,7 @@ impl Gateway {
     fn ack_event(&mut self, event_id: i64, event_hash: &str) {
         eprintln!(
             "event processed: {}/{}: {}",
-            event_id,
-            self.last_event_id,
-            event_hash
+            event_id, self.last_event_id, event_hash
         );
         if self.last_event_id < event_id {
             self.last_event_id = event_id;
@@ -122,7 +116,7 @@ impl Gateway {
                 self.node_id(),
                 task,
             )
-                .start();
+            .start();
             self.tasks.insert(task.task_id().to_owned(), worker);
             self.ack_event(ev.event_id(), task.task_id());
         } else if let Some(subtask) = ev.subtask() {
@@ -145,8 +139,14 @@ impl Gateway {
             } else {
                 eprintln!("no worker for: {}", subtask_verification.task_id());
             }
-            self.ack_event(ev.event_id(), &format!("subtask {} verification: {}",
-                                                   subtask_verification.subtask_id(), subtask_verification.verification_result()));
+            self.ack_event(
+                ev.event_id(),
+                &format!(
+                    "subtask {} verification: {}",
+                    subtask_verification.subtask_id(),
+                    subtask_verification.verification_result()
+                ),
+            );
         } else {
             eprintln!("invalid event={:?}", ev);
         }
