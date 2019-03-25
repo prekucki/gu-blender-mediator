@@ -6,19 +6,9 @@ Traces given hub session.
 
 **/
 use futures::prelude::*;
-use gu_client::r#async::HubSessionRef;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
-
-struct GwSessionConfiguration {
-    /// Etherium address for receiveing payments.
-    eth_addr: String,
-}
-
-struct GatewaySession {
-    hub_session: HubSessionRef,
-}
 
 pub struct Gateway {
     gw_url: String,
@@ -80,11 +70,13 @@ impl Gateway {
                 )
                 .with_performance(1000f32),
             )
-            .and_then(|s| Ok(eprintln!("status: {:?}", serde_json::to_string_pretty(&s)?)))
+            .and_then(|s| Ok(eprintln!("status: {}", serde_json::to_string_pretty(&s)?)))
             .from_err()
     }
 
-    fn poll_events(&self) -> impl Future<Item = Vec<golem_gw_api::models::Event>, Error = failure::Error> {
+    fn poll_events(
+        &self,
+    ) -> impl Future<Item = Vec<golem_gw_api::models::Event>, Error = failure::Error> {
         self.api()
             .fetch_events(self.node_id(), self.task_type(), self.last_event_id)
             .from_err()
@@ -145,7 +137,7 @@ impl Gateway {
                 .poll_events()
                 .map_err(|e| eprintln!("polling events failed: {}", e))
                 .into_actor(act)
-                .and_then(|events, act, ctx| {
+                .and_then(|events, act, _| {
                     for ev in events {
                         act.process_event(&ev)
                     }

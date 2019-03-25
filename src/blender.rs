@@ -85,11 +85,7 @@ lazy_static::lazy_static! {
 struct ErrorMissingField(&'static str);
 
 impl OldBlenderTaskSpec {
-    pub fn resolution(&self) -> (u32, u32) {
-        unimplemented!()
-    }
-
-    fn parse_script<'a>(&'a self) -> failure::Fallible<ScriptData> {
+    fn parse_script(&self) -> failure::Fallible<ScriptData> {
         use std::ops::Index;
         let mut data = ScriptData::default();
 

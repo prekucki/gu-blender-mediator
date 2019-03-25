@@ -1,5 +1,5 @@
 use super::blender;
-use super::{dav, joinact::join_act_fut, workman};
+use super::{dav, joinact, workman};
 use actix::prelude::*;
 use futures::prelude::*;
 use golem_gw_api::models::Subtask;
