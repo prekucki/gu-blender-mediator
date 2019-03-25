@@ -21,7 +21,6 @@ struct Reservation {
 impl Reservation {
     fn new(task_id: String, deadline: u64) -> Reservation {
         let reserved_until = UNIX_EPOCH + Duration::from_secs(deadline);
-        eprintln!("{:?} reserved until {:?}", task_id, reserved_until);
 
         Reservation {
             task_id,
@@ -108,15 +107,23 @@ impl Handler<GiveMeNode> for WorkMan {
 }
 
 pub fn reserve(task_id: &str, deadline: u64) -> impl Future<Item = NodeId, Error = NoFreeNode> {
+    let task = task_id.to_owned();
     WorkMan::from_registry()
         .send(GiveMeNode {
-            task_id: task_id.to_owned(),
+            task_id: task.clone(),
             deadline,
         })
-        .then(|r| match r {
-            Ok(Ok(v)) => Ok(v),
+        .then(move |r| match r {
+            Ok(Ok(node_id)) => {
+                log::info!(
+                    "reserved peer {:?} for subtask {:?} until {:?}",
+                    node_id, task, deadline
+                );
+
+                Ok(node_id)
+            }
             Err(e) => {
-                eprintln!("reservation error: {}", e);
+                log::error!("reservation error: {}", e);
                 Err(NoFreeNode)
             }
             Ok(Err(_)) => Err(NoFreeNode),
