@@ -85,11 +85,7 @@ lazy_static::lazy_static! {
 struct ErrorMissingField(&'static str);
 
 impl OldBlenderTaskSpec {
-    pub fn resolution(&self) -> (u32, u32) {
-        unimplemented!()
-    }
-
-    fn parse_script<'a>(&'a self) -> failure::Fallible<ScriptData> {
+    fn parse_script(&self) -> failure::Fallible<ScriptData> {
         use std::ops::Index;
         let mut data = ScriptData::default();
 
@@ -100,10 +96,10 @@ impl OldBlenderTaskSpec {
         Ok(data)
     }
 
-    fn into_spec(self) -> failure::Fallible<BlenderTaskSpec> {
+    fn into_spec(self) -> failure::Fallible<BlenderSubtaskSpec> {
         let data = self.parse_script()?;
 
-        Ok(BlenderTaskSpec {
+        Ok(BlenderSubtaskSpec {
             samples: 0,
             resolution: (data.resolution_x()?, data.resolution_y()?),
             frames: self.frames,
@@ -119,7 +115,7 @@ impl OldBlenderTaskSpec {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BlenderTaskSpec {
+pub struct BlenderSubtaskSpec {
     crops: Vec<Crop>,
     samples: u32,
     resolution: (u32, u32),
@@ -135,7 +131,7 @@ pub struct Crop {
     outfilebasename: String,
 }
 
-impl BlenderTaskSpec {
+impl BlenderSubtaskSpec {
     pub fn normalize_path(&mut self) {
         self.scene_file = self.scene_file.take().map(|f| {
             if f.starts_with("/golem/resources") {
@@ -157,6 +153,18 @@ impl BlenderTaskSpec {
             .flatten()
             .next()
             .unwrap()
+    }
+}
+
+impl std::fmt::Display for BlenderSubtaskSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "BlenderTaskSpec (scene: {}, frames: {:?}, res: {:?})",
+            self.scene_file.as_ref().unwrap(),
+            self.frames,
+            self.resolution
+        )
     }
 }
 
@@ -208,7 +216,7 @@ pub fn blender_deployment_spec(
     }
 }
 
-pub fn decode(extra_data: serde_json::Value) -> Result<BlenderTaskSpec, failure::Error> {
+pub fn decode(extra_data: serde_json::Value) -> Result<BlenderSubtaskSpec, failure::Error> {
     match serde_json::from_value(extra_data.clone()) {
         Ok(v) => return Ok(v),
         _ => (),
