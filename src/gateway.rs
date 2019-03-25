@@ -70,7 +70,7 @@ impl Gateway {
                 )
                 .with_performance(1000f32),
             )
-            .and_then(|s| Ok(eprintln!("status: {}", serde_json::to_string_pretty(&s)?)))
+            .and_then(|s| Ok(log::info!("status: {}", serde_json::to_string_pretty(&s)?)))
             .from_err()
     }
 
@@ -83,8 +83,8 @@ impl Gateway {
     }
 
     fn ack_event(&mut self, event_id: i64) {
-        eprintln!(
-            "[ -[_] ] event processed: {}/{}",
+        log::info!(
+            "[ -[_]- ] event processed: {}/{}",
             event_id, self.last_event_id
         );
         if self.last_event_id < event_id {
@@ -107,22 +107,22 @@ impl Gateway {
             if let Some(worker) = self.tasks.get(subtask.task_id()) {
                 worker.do_send(DoSubTask(subtask.clone()))
             } else {
-                eprintln!("no worker for: {}", subtask.task_id());
+                log::warn!("no worker for: {}", subtask.task_id());
             }
         } else if let Some(resource) = ev.resource() {
             if let Some(worker) = self.tasks.get(resource.task_id()) {
                 worker.do_send(DoResource(resource.clone()))
             } else {
-                eprintln!("no worker for: {}", resource.task_id());
+                log::warn!("no worker for: {}", resource.task_id());
             }
         } else if let Some(subtask_verification) = ev.subtask_verification() {
             if let Some(worker) = self.tasks.get(subtask_verification.task_id()) {
                 worker.do_send(DoSubtaskVerification(subtask_verification.clone()))
             } else {
-                eprintln!("no worker for: {}", subtask_verification.task_id());
+                log::warn!("no worker for: {}", subtask_verification.task_id());
             }
         } else {
-            eprintln!("invalid event={:?}", ev);
+            log::warn!("invalid event={:?}", ev);
             return;
         }
         self.ack_event(ev.event_id());
@@ -135,7 +135,7 @@ impl Gateway {
         ctx.run_interval(Duration::from_secs(1), |act, ctx| {
             let f = act
                 .poll_events()
-                .map_err(|e| eprintln!("polling events failed: {}", e))
+                .map_err(|e| log::error!("polling events failed: {}", e))
                 .into_actor(act)
                 .and_then(|events, act, _| {
                     for ev in events {
@@ -166,7 +166,7 @@ impl Actor for Gateway {
             })
             .into_actor(self)
             .map_err(|e, act, ctx| {
-                eprintln!("failed to create hub session {:?}: {}", act.hub_session, e);
+                log::error!("failed to create hub session {:?}: {}", act.hub_session, e);
                 ctx.stop()
             })
             .and_then(|h, mut act, _| {

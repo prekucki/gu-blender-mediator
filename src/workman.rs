@@ -115,7 +115,7 @@ pub fn reserve(task_id: &str, deadline: u64) -> impl Future<Item = NodeId, Error
         })
         .then(move |r| match r {
             Ok(Ok(node_id)) => {
-                eprintln!(
+                log::info!(
                     "reserved peer {:?} for subtask {:?} until {:?}",
                     node_id, task, deadline
                 );
@@ -123,7 +123,7 @@ pub fn reserve(task_id: &str, deadline: u64) -> impl Future<Item = NodeId, Error
                 Ok(node_id)
             }
             Err(e) => {
-                eprintln!("reservation error: {}", e);
+                log::error!("reservation error: {}", e);
                 Err(NoFreeNode)
             }
             Ok(Err(_)) => Err(NoFreeNode),
