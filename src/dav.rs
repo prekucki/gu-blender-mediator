@@ -93,7 +93,10 @@ impl DavPath {
                 if r.status().is_success() {
                     Ok(DavPath { uri: new_uri })
                 } else {
-                    Err(Error::HttpStatus{ status: r.status().as_u16(), uri: new_uri})
+                    Err(Error::HttpStatus {
+                        status: r.status().as_u16(),
+                        uri: new_uri,
+                    })
                 }
             })
     }
