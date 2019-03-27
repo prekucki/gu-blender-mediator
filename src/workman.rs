@@ -117,7 +117,9 @@ pub fn reserve(task_id: &str, deadline: u64) -> impl Future<Item = NodeId, Error
             Ok(Ok(node_id)) => {
                 log::info!(
                     "reserved peer {:?} for subtask {:?} until {:?}",
-                    node_id, task, deadline
+                    node_id,
+                    task,
+                    deadline
                 );
 
                 Ok(node_id)

@@ -5,7 +5,8 @@ authors = ["Przemysław K. Rekucki <przemyslaw.rekucki@golem.network>"]
 edition = "2018"
 
 [dependencies]
-gu-client = { git="https://github.com/golemfactory/golem-unlimited.git", branch="release/0.2" }
+gu-actix = { git="https://github.com/golemfactory/golem-unlimited.git", branch="feature/js-refactor" }
+gu-client = { git="https://github.com/golemfactory/golem-unlimited.git", branch="feature/js-refactor" }
 golem_gw_api={git="https://github.com/prekucki/golem-gw-client.git"}
 structopt= { version="0.2.14"}
 actix = "0.7"
@@ -22,6 +23,7 @@ bytes = "0.4.10"
 regex = "1.1.2"
 env_logger="0.6.1"
 log="0.4.6"
+
 
 [build-dependencies]
 structopt= { version="0.2.14"}
