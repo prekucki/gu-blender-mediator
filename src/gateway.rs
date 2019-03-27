@@ -49,8 +49,16 @@ impl Gateway {
         self.api.as_ref().unwrap().as_ref()
     }
 
+    fn name(&self) -> &str {
+        "gu-mediator blendering"
+    }
+
     fn node_id(&self) -> &str {
-        "0x72cde436f012107b3b1968475b5bd6b2c9a2b948"
+        "0xb2bbb75241939e50b5ba6f698415bbb5ca54610d"
+    }
+
+    fn eth_public_key(&self) -> &str {
+        "bf1abe57ba441ba1b3a6ee433cf1fd6028fec6061db84272a20beb2e760314162ad00451cd84584eaed4f1fc38b394e35c36d3e54925ac13e3a751fae3a66e0e"
     }
 
     fn task_type(&self) -> &str {
@@ -63,12 +71,15 @@ impl Gateway {
                 self.node_id(),
                 self.task_type(),
                 golem_gw_api::models::Subscription::new(
-                    1,
+                    1f64,
                     6,
                     3 * 1024 * 1024 * 512,
                     3 * 1024 * 1024 * 512,
                 )
-                .with_performance(1000f32),
+                    .with_name(self.name().into())
+                .with_performance(1000f32)
+                .with_eth_pub_key(self.eth_public_key().into())
+                ,
             )
             .and_then(|s| Ok(log::info!("status: {}", serde_json::to_string_pretty(&s)?)))
             .from_err()
@@ -161,7 +172,7 @@ impl Actor for Gateway {
             .new_session(gu_client::model::session::HubSessionSpec {
                 expires: None,
                 allocation: gu_client::model::session::AllocationMode::AUTO,
-                name: Some(format!("gu-mediator blendering")),
+                name: Some(self.name().into()),
                 tags: std::collections::BTreeSet::new(),
             })
             .into_actor(self)
