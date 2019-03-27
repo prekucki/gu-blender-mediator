@@ -309,14 +309,19 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
             self.api
                 .want_to_compute_task(&self.node_id, self.task.task_id())
                 .into_actor(self)
-                .and_then(|m, _, _| {
-                    fut::ok(log::info!("want to compute (next) task send: {:?}", m))
-                })
-                .map_err(|e, _, _| {
-                    // TODO: clean-up after last subtask, use task deadline
-                    // TODO: check if requestor sends NO_MORE_SUBTASKS to gw and pass it as an event
-                    log::error!("want to compute (next) task failed: {:?}", e);
-                    gu_client::error::Error::Other(e.to_string())
+                .and_then(|m, _, _| fut::ok(log::info!("want to compute (next) task send: {:?}", m)))
+                .map_err(|e, act, _| {
+                    let msg = format!("{:?}", e);
+                    let task_not_found = format!("{} not found", act.task.task_id());
+                    if msg.contains(task_not_found.as_str()) {
+                        // TODO: clean-up after last subtask, use task deadline
+                        // TODO: check if requestor sends NO_MORE_SUBTASKS to gw and pass it as an event
+                        log::info!("task {} has finished", act.task.task_id());
+                        gu_client::error::Error::Other("task finshed".into())
+                    } else {
+                        log::error!("want to compute (next) task failed: {:?}", e);
+                        gu_client::error::Error::Other(e.to_string())
+                    }
                 }),
         )
     }
