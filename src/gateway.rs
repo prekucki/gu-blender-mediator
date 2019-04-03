@@ -7,10 +7,10 @@ Traces given hub session.
 **/
 use futures::prelude::*;
 use gu_actix::flatten::FlattenFuture;
+use serde_derive::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
-use serde_derive::*;
 
 pub struct Gateway {
     gw_url: String,
@@ -20,16 +20,18 @@ pub struct Gateway {
     session_id: Option<u64>,
     last_event_id: i64,
     tasks: HashMap<String, Addr<TaskWorker>>,
+    stats: StatsData,
 }
 
 pub struct Stats;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StatsData {
     pub tasks: u64,
     pub subtasks: u64,
     pub subtasks_done: u64,
+    pub fails: u64,
 }
 
 impl Message for Stats {
@@ -46,6 +48,7 @@ impl Gateway {
             session_id,
             tasks: HashMap::new(),
             hub_session: None,
+            stats: StatsData::default(),
         }
     }
 
@@ -53,24 +56,26 @@ impl Gateway {
         self.api.as_ref().unwrap().as_ref()
     }
 
-    fn set_status(&mut self, msg : &str, ctx: &mut <Self as Actor>::Context) {
+    fn set_status(&mut self, msg: &str, ctx: &mut <Self as Actor>::Context) {
         let hub_session = match &self.hub_session {
             Some(s) => s.clone(),
-            None => return
+            None => return,
         };
 
         let config = hub_session.config();
         let status = match serde_json::to_value(msg) {
             Ok(s) => s,
-            Err(e) => return
+            Err(e) => return,
         };
         ctx.spawn(
-        config.and_then(move |mut c : gu_client::model::session::Metadata| {
-            c.entry.insert("status".to_owned(), status);
-            hub_session.set_config(c)
-        }).map_err(|e| log::error!("update config {}", e))
-            .and_then(|_| Ok(()))
-            .into_actor(self)
+            config
+                .and_then(move |mut c: gu_client::model::session::Metadata| {
+                    c.entry.insert("status".to_owned(), status);
+                    hub_session.set_config(c)
+                })
+                .map_err(|e| log::error!("update config {}", e))
+                .and_then(|_| Ok(()))
+                .into_actor(self),
         );
     }
 
@@ -115,10 +120,9 @@ impl Gateway {
                     3 * 1024 * 1024 * 512,
                     3 * 1024 * 1024 * 512,
                 )
-                    .with_name(self.name().into())
+                .with_name(self.name().into())
                 .with_performance(1000f32)
-                .with_eth_pub_key(self.eth_public_key().into())
-                ,
+                .with_eth_pub_key(self.eth_public_key().into()),
             )
             .and_then(|s| Ok(log::info!("status: {}", serde_json::to_string_pretty(&s)?)))
             .from_err()
@@ -153,6 +157,7 @@ impl Gateway {
                 task,
             )
             .start();
+            self.stats.tasks += 1;
             self.tasks.insert(task.task_id().to_owned(), worker);
         } else if let Some(subtask) = ev.subtask() {
             if let Some(worker) = self.tasks.get(subtask.task_id()) {
@@ -253,25 +258,54 @@ impl Handler<Stats> for Gateway {
         use gu_actix::prelude::*;
         let tasks = self.tasks.len();
 
-        ActorResponse::r#async(
-            futures::future::join_all(self.tasks.values().map(|t| t.send(Stats).flatten_fut()).collect::<Vec<_>>())
-                .and_then(|r: Vec<StatsData>| {
-                    let agg = r.into_iter().fold(
-                        StatsData {
-                            tasks: 0,
-                            subtasks: 0,
-                            subtasks_done: 0,
-                        },
-                        |a, r| StatsData {
-                            tasks: a.tasks + r.tasks + 1,
-                            subtasks_done: a.subtasks_done + r.subtasks_done,
-                            subtasks: a.subtasks + r.subtasks,
-                        },
-                    );
+        let e: Vec<String> = self
+            .tasks
+            .iter()
+            .filter_map(|(k, v)| {
+                if !v.connected() {
+                    Some(k.to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-                    Ok(agg)
-                })
-                .into_actor(self),
+        for k in e {
+            self.tasks.remove(&k);
+        }
+
+        let init = self.stats.clone();
+
+        ActorResponse::r#async(
+            futures::future::join_all(
+                self.tasks
+                    .values()
+                    .map(|t| {
+                        t.send(Stats).flatten_fut().then(|r| match r {
+                            Ok(r) => Ok(r),
+                            Err(e) => {
+                                log::warn!("get stats err: {}", e);
+                                Ok(StatsData::default())
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .and_then(move |r: Vec<StatsData>| {
+                let agg = r.into_iter().fold(init, |a, r| StatsData {
+                    tasks: a.tasks + r.tasks,
+                    subtasks_done: a.subtasks_done + r.subtasks_done,
+                    subtasks: a.subtasks + r.subtasks,
+                    fails: a.fails + r.fails,
+                });
+
+                Ok(agg)
+            })
+            .into_actor(self)
+            .and_then(|r, mut act, _| {
+                act.stats = r.clone();
+                fut::ok(r)
+            }),
         )
     }
 }

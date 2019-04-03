@@ -174,13 +174,24 @@
 
             }
 
+            $scope.restartSession = function () {
+                $http.post('/service/local/BrassBlender/gu-blender-mediator/gw', session.id).then(function() {
+                    $scope.working = true;
+                    refresh();
+
+                });
+            };
+
 
             function refresh() {
                 session.getConfig().then(c => {
                     $scope.sessionConfig = c;
                     refreshAccount(c.account);
                 });
-                $http.get(`/service/local/BrassBlender/gu-blender-mediator/gw/${session.id}`).then(c => $scope.sessionStats = c.data, e => {
+                $http.get(`/service/local/BrassBlender/gu-blender-mediator/gw/${session.id}`).then(c => {
+                    $scope.sessionStats = c.data;
+                    $scope.working = true;
+                }, e => {
                     $scope.working = false;
                 });
 
@@ -192,7 +203,7 @@
 
             let stop = $interval(function() {
                 refresh()
-            }, 15000);
+            }, 5000);
 
             $scope.$on('$destroy', function() {
                 $interval.cancel(stop);

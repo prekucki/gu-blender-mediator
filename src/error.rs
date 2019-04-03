@@ -6,13 +6,12 @@ pub enum Error {
     Other(String),
 
     #[fail(display = "mailbox error {}", _0)]
-    MailboxError(actix::MailboxError)
+    MailboxError(actix::MailboxError),
 }
 
 pub fn other(msg: &str) -> Error {
     Error::Other(msg.into())
 }
-
 
 impl From<actix::MailboxError> for Error {
     fn from(e: actix::MailboxError) -> Self {

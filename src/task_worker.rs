@@ -25,6 +25,7 @@ pub struct TaskWorker {
 struct Counters {
     subtasks_cnt: u64,
     subtasks_done_cnt: u64,
+    subtasks_fail_cnt: u64,
 }
 
 pub struct DoSubTask(pub Subtask);
@@ -133,6 +134,7 @@ impl TaskWorker {
                         result_path,
                         r
                     );
+
                     act.api
                         .subtask_result(
                             &act.node_id,
@@ -309,7 +311,9 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
             self.api
                 .want_to_compute_task(&self.node_id, self.task.task_id())
                 .into_actor(self)
-                .and_then(|m, _, _| fut::ok(log::info!("want to compute (next) task send: {:?}", m)))
+                .and_then(|m, _, _| {
+                    fut::ok(log::info!("want to compute (next) task send: {:?}", m))
+                })
                 .map_err(|e, act, _| {
                     let msg = format!("{:?}", e);
                     let task_not_found = format!("{} not found", act.task.task_id());
@@ -330,38 +334,43 @@ impl Handler<DoSubtaskVerification> for TaskWorker {
 impl TaskWorker {
     fn create_deployment(&self) -> Box<dyn ActorFuture<Actor = TaskWorker, Item = (), Error = ()>> {
         Box::new(
-            workman::reserve(self.task.task_id(), (*self.task.deadline()) as u64)
-                .map_err(|_| /*TODO*/())
-                .into_actor(self)
-                .and_then(|peer_id, act: &mut TaskWorker, _| {
-                    act.peer_id = Some(peer_id);
-                    act.hub_session
-                        .add_peers(vec![peer_id])
+            workman::reserve_for_session(
+                self.hub_session.id(),
+                self.task.task_id(),
+                (*self.task.deadline()) as u64,
+            )
+            .map_err(|_| {
+                /*TODO*/
+                ()
+            })
+            .into_actor(self)
+            .and_then(|peer_id, act: &mut TaskWorker, _| {
+                act.peer_id = Some(peer_id);
+                act.hub_session
+                    .add_peers(vec![peer_id])
+                    .into_actor(act)
+                    .map_err(|e, act, _| {
+                        log::error!("fail to add peer {:?}: {}", act.peer_id.unwrap(), e)
+                    })
+                    .and_then(|_, act: &mut TaskWorker, _| {
+                        blender::blender_deployment_spec(
+                            act.hub_session.peer(act.peer_id.unwrap()),
+                            true,
+                        )
                         .into_actor(act)
                         .map_err(|e, act, _| {
-                            log::error!("fail to add peer {:?}: {}", act.peer_id.unwrap(), e)
-                        })
-                        .and_then(|_, act: &mut TaskWorker, _| {
-                            blender::blender_deployment_spec(
-                                act.hub_session.peer(act.peer_id.unwrap()),
-                                true,
-                            )
-                            .into_actor(act)
-                            .map_err(|e, act, _| {
-                                log::warn!(
-                                    "unable to create deployment @ peer: {:?}, err: {}",
-                                    act.peer_id.unwrap(),
-                                    e
-                                )
-                            })
-                            .and_then(
-                                |deployment, act: &mut TaskWorker, _| {
-                                    act.deployment = Some(deployment);
-                                    fut::ok(())
-                                },
+                            log::warn!(
+                                "unable to create deployment @ peer: {:?}, err: {}",
+                                act.peer_id.unwrap(),
+                                e
                             )
                         })
-                }),
+                        .and_then(|deployment, act: &mut TaskWorker, _| {
+                            act.deployment = Some(deployment);
+                            fut::ok(())
+                        })
+                    })
+            }),
         )
     }
 
@@ -375,6 +384,7 @@ impl TaskWorker {
                 if retry_cnt > 0 {
                     actix::fut::Either::B(act.create_deployment_with_retry(retry_cnt - 1))
                 } else {
+                    act.cnt.subtasks_fail_cnt += 1;
                     actix::fut::Either::A(fut::err(e))
                 }
             }
@@ -402,15 +412,22 @@ impl Actor for TaskWorker {
 
 use super::error::Error;
 use super::gateway::{Stats, StatsData};
+use crate::workman::reserve_for_session;
 
 impl Handler<Stats> for TaskWorker {
     type Result = Result<StatsData, Error>;
 
     fn handle(&mut self, msg: Stats, ctx: &mut Self::Context) -> Self::Result {
-        Ok(StatsData {
+        let result = StatsData {
             tasks: 0,
             subtasks: self.cnt.subtasks_cnt,
             subtasks_done: self.cnt.subtasks_done_cnt,
-        })
+            fails: self.cnt.subtasks_fail_cnt,
+        };
+        self.cnt.subtasks_cnt = 0;
+        self.cnt.subtasks_done_cnt = 0;
+        self.cnt.subtasks_fail_cnt = 0;
+
+        Ok(result)
     }
 }
