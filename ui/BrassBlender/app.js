@@ -40,13 +40,15 @@
                 $('<link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">').appendTo($('head'));
             });
         })
-        .controller('BrassBlenderBase', function ($scope, $log, $q, sessionMan) {
+        .controller('BrassBlenderBase', function ($scope, $log, $q, sessionMan, $window) {
+            const GW_URL_KEY = "gu.default.gw";
+            const localStorage = $window.localStorage;
+
 
             $scope.dockerMode = true;
             $scope.config = {
                 account: '',
-                davUrl: 'http://127.0.0.1:55011',
-                gwUrl: 'http://127.0.0.1:55001/',
+                gwUrl: localStorage.getItem(GW_URL_KEY) || 'http://127.0.0.1:55001/',
             };
 
             $scope.gntInfo = {
@@ -95,17 +97,19 @@
 
 
             $scope.goNext = function () {
-                console.log('fc=', $scope.fc);
+
                 if ($scope.fc.$invalid) {
                     return;
                 }
+
+                localStorage.setItem(GW_URL_KEY, $scope.config.gwUrl);
 
                 let context = $scope.$eval('sessionContext');
 
                 sessionMan.create('Blendering for ' + $scope.config.account, ['gu:brass', 'gu:brass:taskType=Blender'])
                     .then(session => session.setConfig({
                         account: $scope.config.account,
-                        davUrl: $scope.config.davUrl,
+                        davUrl: `${$scope.config.gwUrl}dav`,
                         gwUrl: $scope.config.gwUrl,
                         docker: $scope.dockerMode
                     }).then(data => {
@@ -198,6 +202,7 @@
             }
 
             session.peers().then(peers => {
+                console.log('peers=', peers);
                 $scope.sessionPeers = peers;
             });
 

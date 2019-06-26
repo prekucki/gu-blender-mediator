@@ -7,7 +7,7 @@ use gu_client::NodeId;
 use std::rc::Rc;
 
 pub struct TaskWorker {
-    gw_url: String,
+    dav_url: String,
     api: Rc<dyn golem_gw_api::apis::DefaultApi>,
     hub_session: gu_client::r#async::HubSession,
     deployment: Option<gu_client::r#async::PeerSession>,
@@ -48,14 +48,14 @@ impl Message for DoSubtaskVerification {
 
 impl TaskWorker {
     pub fn new(
-        gw_url: String,
+        dav_url: String,
         api: &Rc<dyn golem_gw_api::apis::DefaultApi>,
         hub_session: gu_client::r#async::HubSession,
         node_id: &str,
         task: &golem_gw_api::models::Task,
     ) -> Self {
         TaskWorker {
-            gw_url,
+            dav_url,
             api: api.clone(),
             hub_session,
             node_id: node_id.to_owned(),
@@ -232,8 +232,8 @@ impl Handler<DoResource> for TaskWorker {
         }
 
         let r = &msg.0;
-        let zip_uri = format!("{}/{}/{}", self.gw_url, r.path(), r.task_id());
-        let task_uri = format!("{}/{}", self.gw_url, r.task_id());
+        let zip_uri = format!("{}/{}/{}", self.dav_url, r.path(), r.task_id());
+        let task_uri = format!("{}/{}", self.dav_url, r.task_id());
 
         self.subtask_id = Some(r.subtask_id().clone());
         log::info!("got resource for subtask {}", r.subtask_id());

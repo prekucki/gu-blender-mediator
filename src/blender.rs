@@ -210,6 +210,7 @@ pub fn blender_deployment_spec(
                         },
                     ],
                     cmd: None,
+                    net: None
                 },
             }),
         )

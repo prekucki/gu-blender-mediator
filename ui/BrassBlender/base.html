@@ -4,7 +4,7 @@
     </div>
     <div class="panel-body">
         <form name="fc">
-            <div class="form-group col-md-4" ng-class="{'has-error': fc.gwUrl.$invalid}">
+            <div class="form-group col-md-8" ng-class="{'has-error': fc.gwUrl.$invalid}">
                 <label>Brass gateway URL</label>
                 <div class="input-group col-md-12">
                     <input type="url" class="form-control" placeholder="Enter url" ng-model="config.gwUrl" name="gwUrl"
@@ -12,15 +12,16 @@
                     <small class="form-text text-muted"></small>
                 </div>
             </div>
-            <div class="form-group col-md-4" ng-class="{'has-error': fc.davUrl.$invalid}">
+            <!--div class="form-group col-md-4" ng-class="{'has-error': fc.davUrl.$invalid}">
                 <label>Brass Gateway Storage</label>
                 <div class="input-group col-md-12">
                     <input type="url" class="form-control" ng-model="config.davUrl" name="davUrl">
                 </div>
-            </div>
-            <div class="form-group col-md-4">
+            </div-->
+            <div class="form-group col-md-2">
                 <label class="form-label">Docker Mode</label>
                 <div class="input-group col-md-12">
+                    <div style="height: 34px">
                     <div class="toggle btn btn-xs btn-primary" ng-class="{off: !dockerMode}" ng-click="toggleMode()">
                         <input type="checkbox" checked="" data-toggle="toggle">
                         <div class="toggle-group" ng-click="toggle(peer, 'gu:mining:monero', 'gpu')">
@@ -29,10 +30,12 @@
                             <span class="toggle-handle btn btn-xs btn-default"></span>
                         </div>
                     </div>
+                    </div>
                 </div>
             </div>
-            <div class="form-group col-md-6" ng-class="{'has-error': fc.account.$invalid}">
-                <label class="control-label">Etherium address <span class="label label-default">{{net}}</span></label>
+
+            <div class="form-group col-md-4" ng-class="{'has-error': fc.account.$invalid}">
+                <label class="control-label">Ethereum address <span class="label label-default">{{net}}</span></label>
                 <div class="input-group col-md-12">
                     <input type="text" class="form-control" ng-model="config.account" name="account" eth-address
                            required>
@@ -48,7 +51,8 @@
                     </div>
                 </div>
             </div>
-            <div class="form-group col-md-3" ng-if="isConnected()">
+
+            <div class="form-group col-md-4" ng-if="isConnected()">
                 <label>GNT:</label>
                 <div class="input-group col-md-12">
                     <div>{{gntInfo.gnt}}</div>

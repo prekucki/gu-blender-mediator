@@ -1,5 +1,9 @@
+#[macro_use]
+extern crate diesel;
+
 use actix::prelude::*;
 use actix_web::{
+    http::StatusCode,
     dev::JsonBody, dev::Path, http, web, App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
     Responder,
 };
@@ -7,11 +11,11 @@ use futures::prelude::*;
 use structopt::StructOpt;
 
 use gateway::Gateway;
-use gu_actix::flatten::FlattenFuture;
 use log::Metadata;
 use serde_derive::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use serde_json::error::Category::Syntax;
 
 mod args;
 
@@ -23,6 +27,12 @@ mod joinact;
 mod subtask_worker;
 mod task_worker;
 mod workman;
+mod keygen;
+mod activator;
+
+mod schema;
+mod model;
+
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,15 +47,24 @@ struct SessionConfig {
 }
 
 fn main() {
+
+    if ::std::env::var("RUST_LOG").is_err() {
+        ::std::env::set_var("RUST_LOG", "info")
+    }
+
+
     env_logger::init();
     let args = args::Args::from_args();
 
     let local = args.local;
 
+    let sys = System::new("gu-blender-mediator");
+
+
     if !local {
         Arbiter::spawn_fn(|| {
             eprintln!("Starting registration");
-            gu_plugin_api::register_server("http://127.0.0.1:33433/", "gu-blender-mediator")
+            gu_plugin_api::register_service("http://127.0.0.1:33433/", "gu-blender-mediator")
         })
     } else {
         eprintln!("registration skipped");
@@ -53,21 +72,15 @@ fn main() {
 
     let gateways: Arc<RwLock<HashMap<Option<u64>, _>>> = Arc::new(RwLock::new(HashMap::new()));
 
-    if !args.gw_addr.is_empty() && !args.dav_addr.is_empty() {
-        let gw = Gateway::new(None, args.dav_addr, args.gw_addr).start();
+    eprintln!("http://127.0.0.1:33433/");
 
-        gateways.write().unwrap().insert(None, gw);
-    }
-
-    //let client = ::hyper::client::Client::
-    //golem_gw_api::apis::configuration::Configuration::new()
-
-    HttpServer::new(move || {
+    let s = HttpServer::new(move || {
         let gateways_to_add = gateways.clone();
         let gateways_to_get = gateways.clone();
         let gateways_to_get2 = gateways.clone();
 
         App::new()
+            .wrap(actix_web::middleware::Logger::default())
             .service(
                 web::resource("/gw")
                     .route(web::post().to_async(move |b: web::Json<u64>| {
@@ -121,7 +134,7 @@ fn main() {
                     };
                     let request = {
                         gw.into_future()
-                            .and_then(|a| a.send(gateway::Stats).flatten_fut())
+                            .and_then(|a| a.send(gateway::Stats).flatten())
                     };
 
                     request
@@ -132,6 +145,8 @@ fn main() {
     })
     .bind("127.0.0.1:33433")
     .unwrap()
-    .run()
-    .unwrap()
+    .start();
+
+    sys.run();
+
 }

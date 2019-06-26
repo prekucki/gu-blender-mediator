@@ -1,0 +1,8 @@
+
+
+
+# Zasada działania
+
+Manager 
+
+    

@@ -6,7 +6,7 @@ use actix::Context;
 use failure::*;
 use futures::prelude::*;
 use gu_client::{r#async::HubConnection, NodeId};
-use rand::prelude::*;
+use rand::Rng as _;
 
 #[derive(Debug, Fail)]
 #[fail(display = "no free node")]
@@ -107,10 +107,9 @@ impl Handler<GiveMeNode> for WorkMan {
                         .filter(|&p| act.is_free_to_use(p))
                         .collect();
 
-                    use rand::seq::SliceRandom;
-                    let mut rng = thread_rng();
+                    let mut rng = rand::thread_rng();
 
-                    if let Some(&it) = c.choose(&mut rng) {
+                    if let Some(&it) =  rng.choose(c.as_ref()) {
                         act.reservations
                             .insert(it.clone(), Reservation::new(msg.task_id, msg.deadline));
                         fut::ok(it)
@@ -138,10 +137,9 @@ impl Handler<GiveMeSessionNode> for WorkMan {
                         .filter(|&p| act.is_free_to_use(p))
                         .collect();
 
-                    use rand::seq::SliceRandom;
-                    let mut rng = thread_rng();
+                    let mut rng = rand::thread_rng();
 
-                    if let Some(&it) = c.choose(&mut rng) {
+                    if let Some(&it) = rng.choose(c.as_ref()) {
                         act.reservations
                             .insert(it.clone(), Reservation::new(msg.task_id, msg.deadline));
                         fut::ok(it)

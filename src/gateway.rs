@@ -6,14 +6,13 @@ Traces given hub session.
 
 **/
 use futures::prelude::*;
-use gu_actix::flatten::FlattenFuture;
 use serde_derive::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::Duration;
 
 pub struct Gateway {
-    gw_url: String,
+    dav_url: String,
     base_url: String,
     api: Option<std::rc::Rc<dyn golem_gw_api::apis::DefaultApi>>,
     hub_session: Option<gu_client::r#async::HubSession>,
@@ -39,9 +38,9 @@ impl Message for Stats {
 }
 
 impl Gateway {
-    pub fn new(session_id: Option<u64>, gw_url: String, base_url: String) -> Gateway {
+    pub fn new(session_id: Option<u64>, dav_url: String, base_url: String) -> Gateway {
         Gateway {
-            gw_url,
+            dav_url,
             base_url,
             api: None,
             last_event_id: -1,
@@ -150,7 +149,7 @@ impl Gateway {
     fn process_event(&mut self, ev: &golem_gw_api::models::Event) {
         if let Some(task) = ev.task() {
             let worker = TaskWorker::new(
-                self.gw_url.clone(),
+                self.dav_url.clone(),
                 self.api.as_ref().unwrap(),
                 self.hub_session.clone().unwrap(),
                 self.node_id(),
@@ -255,7 +254,7 @@ impl Handler<Stats> for Gateway {
     type Result = ActorResponse<Self, StatsData, super::error::Error>;
 
     fn handle(&mut self, msg: Stats, ctx: &mut Self::Context) -> Self::Result {
-        use gu_actix::prelude::*;
+
         let tasks = self.tasks.len();
 
         let e: Vec<String> = self
@@ -281,7 +280,7 @@ impl Handler<Stats> for Gateway {
                 self.tasks
                     .values()
                     .map(|t| {
-                        t.send(Stats).flatten_fut().then(|r| match r {
+                        t.send(Stats).flatten().then(|r| match r {
                             Ok(r) => Ok(r),
                             Err(e) => {
                                 log::warn!("get stats err: {}", e);
@@ -309,3 +308,5 @@ impl Handler<Stats> for Gateway {
         )
     }
 }
+
+
