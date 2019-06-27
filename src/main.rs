@@ -109,7 +109,7 @@ fn main() {
                                 };
 
                                 let gw =
-                                    Gateway::new(Some(session_id), config.dav_url, config.gw_url)
+                                    Gateway::new(Some(session_id), config.dav_url, config.gw_url, config.account)
                                         .start();
                                 gateways.write().unwrap().insert(Some(session_id), gw);
                                 Ok(HttpResponse::Ok().json("ok"))
@@ -147,6 +147,6 @@ fn main() {
     .unwrap()
     .start();
 
-    sys.run();
+    sys.run().unwrap();
 
 }

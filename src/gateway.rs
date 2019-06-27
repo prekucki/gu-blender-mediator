@@ -20,6 +20,7 @@ pub struct Gateway {
     last_event_id: i64,
     tasks: HashMap<String, Addr<TaskWorker>>,
     stats: StatsData,
+    account : String
 }
 
 pub struct Stats;
@@ -38,7 +39,7 @@ impl Message for Stats {
 }
 
 impl Gateway {
-    pub fn new(session_id: Option<u64>, dav_url: String, base_url: String) -> Gateway {
+    pub fn new(session_id: Option<u64>, dav_url: String, base_url: String, account : String) -> Gateway {
         Gateway {
             dav_url,
             base_url,
@@ -48,6 +49,7 @@ impl Gateway {
             tasks: HashMap::new(),
             hub_session: None,
             stats: StatsData::default(),
+            account
         }
     }
 
@@ -121,7 +123,7 @@ impl Gateway {
                 )
                 .with_name(self.name().into())
                 .with_performance(1000f32)
-                .with_eth_pub_key(self.eth_public_key().into()),
+                .with_eth_addr(self.account.clone()),
             )
             .and_then(|s| Ok(log::info!("status: {}", serde_json::to_string_pretty(&s)?)))
             .from_err()
@@ -165,7 +167,7 @@ impl Gateway {
                 log::warn!("no worker for: {}", subtask.task_id());
             }
         } else if let Some(resource) = ev.resource() {
-            if let Some(worker) = self.tasks.get(resource.task_id()) {
+            if let Some(worker) = self.tasks.get(resource.res_id()) {
                 worker.do_send(DoResource(resource.clone()))
             } else {
                 log::warn!("no worker for: {}", resource.task_id());
