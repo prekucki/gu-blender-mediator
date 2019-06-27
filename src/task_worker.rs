@@ -83,6 +83,8 @@ impl TaskWorker {
     fn start_processing(&mut self, ctx: &mut <Self as Actor>::Context) {
         use gu_client::model::envman::{Command, ResourceFormat};
 
+        log::debug!("task state is_ready={}", self.state.is_ready());
+
         if !self.state.is_ready() {
             return;
         }
@@ -99,6 +101,9 @@ impl TaskWorker {
         let output_path = format!("/golem/output/{}", output_file_name);
         let output_uri = format!("{}/{}", self.output_uri, output_file_name);
         let result_path = format!("{}/output", self.task.task_id());
+
+        log::debug!("task {} output_file_name={}, output_path={}, output_uri={}", self.task.task_id(),
+            output_file_name, output_path, output_uri);
 
         self.state.mark_subtask_start();
         log::info!(
@@ -232,11 +237,11 @@ impl Handler<DoResource> for TaskWorker {
         }
 
         let r = &msg.0;
-        let zip_uri = format!("{}/{}/{}", self.dav_url, r.path(), r.task_id());
-        let task_uri = format!("{}/{}", self.dav_url, r.task_id());
+        let zip_uri = format!("{}/{}/{}", self.dav_url, r.path(), r.subtask_id());
+        let task_uri = format!("{}/{}", self.dav_url, r.res_id());
 
         self.subtask_id = Some(r.subtask_id().clone());
-        log::info!("got resource for subtask {}", r.subtask_id());
+        log::info!("got resource for subtask {}, zip={}, task={}", r.subtask_id(), zip_uri, task_uri);
 
         let deployment = match self.deployment.as_ref() {
             Some(d) => d,
@@ -259,6 +264,7 @@ impl Handler<DoResource> for TaskWorker {
             .map_err(|e, _, _| log::warn!("unable to create output dir at {:?}", e))
             .and_then(|r, act: &mut TaskWorker, _| {
                 act.output_uri = r.to_string();
+                log::debug!("output path={}", act.output_uri);
                 fut::ok(())
             });
 

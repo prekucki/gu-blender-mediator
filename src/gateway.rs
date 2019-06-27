@@ -39,6 +39,7 @@ impl Message for Stats {
 }
 
 impl Gateway {
+
     pub fn new(session_id: Option<u64>, dav_url: String, base_url: String, account : String) -> Gateway {
         Gateway {
             dav_url,
@@ -170,7 +171,7 @@ impl Gateway {
             if let Some(worker) = self.tasks.get(resource.res_id()) {
                 worker.do_send(DoResource(resource.clone()))
             } else {
-                log::warn!("no worker for: {}", resource.task_id());
+                log::warn!("no worker for: {}", resource.res_id());
             }
         } else if let Some(subtask_verification) = ev.subtask_verification() {
             if let Some(worker) = self.tasks.get(subtask_verification.task_id()) {

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use gu_client::r#async::HubConnection;
 use crate::gateway::Gateway;
 use futures::Future;
+use crate::error::Error;
 
 pub struct Activator {
     gateways : RwLock<HashMap<u64, Addr<Gateway>>>,
@@ -45,6 +46,11 @@ impl Activator {
         self.gateways.read().unwrap().keys().cloned().collect()
     }
 
-    //pub fn activate_gateway(&self, session_id : u64) -> impl Future<Item=>
+    pub fn activate_gateway(&self, session_id : u64) -> impl Future<Item=Addr<Gateway>, Error=Error> {
+        self.hub_connection.hub_session(session_id).config().map_err(|e| Error::Other(format!("{}", e))).and_then(|m| {
+            //serde_json::from_value(serde_json::to_value(m.entry)?).map_err(Error::from)
+            Ok(unimplemented!())
+        })
+    }
 
 }
